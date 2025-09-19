@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     class Config:
         env_file = "./.env"
         enf_file_encoding = "utf-8"
+
+    @property
+    def SQLALCHEMY_DATABASE_URL(self):
+        return f"postgresql://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}/{self.DB_NAME}"
     
 
 @lru_cache()
