@@ -53,3 +53,6 @@ openapi.json
 
 # macOS
 .DS_Store 
+
+# Cache 
+__pycache__/

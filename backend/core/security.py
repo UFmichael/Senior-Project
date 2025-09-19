@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 from entities.common.models.model_user import User
 from entities.user.services import get_user_by_username
 from entities.auth.schema import TokenData
-from config import get_settings
+from core.config import get_settings
 from utils.dates import aware_utcnow
 from jose import jwt, JWTError, ExpiredSignatureError
 
