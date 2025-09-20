@@ -6,7 +6,7 @@ from core.security import authenticate_user
 from sqlalchemy.orm import Session
 from core.dependencies import DBSession, get_db, get_user
 from core.security import authenticate_user, create_access_token, create_refresh_token, verify_token
-from entities.auth.schema import Token, AccessTokenRepsonse, RefreshToken
+from entities.auth.schema import Token, AccessTokenResponse, RefreshToken
 
 router = APIRouter(
     prefix='/auth', 
@@ -47,8 +47,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         expires_in=int(access_token_expires.total_seconds()),
         )
 
-@router.post("/token/refresh",response_model=AccessTokenRepsonse)
-def refresh_access_token(payload: RefreshToken, db: DBSession) -> AccessTokenRepsonse:
+@router.post("/token/refresh",response_model=AccessTokenResponse)
+def refresh_access_token(payload: RefreshToken, db: DBSession) -> AccessTokenResponse:
     settings = get_settings()
 
     # Decode & validate
@@ -75,7 +75,7 @@ def refresh_access_token(payload: RefreshToken, db: DBSession) -> AccessTokenRep
     access_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(subject=user_id)
 
-    return AccessTokenRepsonse ( 
+    return AccessTokenResponse ( 
         access_token=access_token,
         token_type="bearer",
         expires_in=int(access_expires.total_seconds())

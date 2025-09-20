@@ -13,7 +13,7 @@ class TokenData(BaseModel):
 class RefreshToken(BaseModel):
     refresh_token: str
 
-class AccessTokenRepsonse(BaseModel):
+class AccessTokenResponse(BaseModel):
     access_token: str
     token_type: str
     expires_in: int
