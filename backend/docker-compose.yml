@@ -11,6 +11,13 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+  rtmp-hls:
+    image: alqutami/rtmp-hls
+    container_name: rtmp-hls
+    ports:
+      - "1935:1935"
+      - "1936:1936"
+      - "1937:1937"
 
 volumes:
   pgdata:
