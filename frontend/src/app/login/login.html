@@ -1,0 +1,21 @@
+<div class="full-page-wrapper">
+    <header class="page-header">
+        Login
+    </header>
+    <div class="login-container">
+        <div class="login-card">
+            <form #loginForm="ngForm" (ngSubmit)="onLogin()">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" [(ngModel)]="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" [(ngModel)]="password">
+                </div>
+                <button type="submit" class="login-button">Login</button>
+            </form>
+            <a [routerLink]="'/signup'" class="signup-link">Sign up</a>
+        </div>
+    </div>
+</div>
