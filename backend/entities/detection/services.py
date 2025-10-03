@@ -1,130 +1,107 @@
+import ultralytics
+import supervision
+import torch
 import cv2
-import numpy as np
+from collections import defaultdict
+import supervision as sv
 from ultralytics import YOLO
-from typing import List, Dict, Any
-import logging
-from datetime import datetime
-from uuid import uuid4
-import base64
-from io import BytesIO
-from PIL import Image
+import os
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-
-class YOLODetectionService:
-    def __init__(self):
-        self.model_path = "yolov8n.pt"
-        self.model = None
-        self._load_model()
-        self.threat_classes = {
-            'weapon': ['knife', 'gun', 'rifle', 'pistol', 'bat', 'stick', 'hammer', 'crowbar'],
-            'person': ['person'],
-            'suspicious_object': ['bag', 'suitcase', 'backpack']
-        }
-
-    def _load_model(self):
-        try:
-            self.model = YOLO(self.model_path)
-            logger.info(f"YOLOv8 model loaded: {self.model_path}")
-        except Exception as e:
-            logger.error(f"Failed to load YOLOv8 model: {e}")
-            raise
-
-    def detect_from_image_file(self, image_path: str, confidence_threshold: float = 0.5) -> Dict[str, Any]:
-        results = self.model(image_path, conf=confidence_threshold)
-        return self._process_results(results[0], image_path)
-
-    def detect_from_base64(self, base64_image: str, confidence_threshold: float = 0.5) -> Dict[str, Any]:
-        image_data = base64.b64decode(base64_image)
-        image = Image.open(BytesIO(image_data)).convert("RGB")
-        image_np = np.array(image)
-        results = self.model(image_np, conf=confidence_threshold)
-        return self._process_results(results[0], "base64_image")
-
-    def detect_from_video(self, video_path: str, confidence_threshold: float = 0.5) -> List[Dict[str, Any]]:
-        results = self.model(video_path, conf=confidence_threshold)
-        detections = []
-        for i, result in enumerate(results):
-            frame_detection = self._process_results(result, f"{video_path}_frame_{i}")
-            frame_detection['frame_number'] = i
-            detections.append(frame_detection)
-        return detections
-
-    def _process_results(self, result, source: str) -> Dict[str, Any]:
-        detections, threats_detected = [], []
-        if result.boxes is not None:
-            boxes = result.boxes.xyxy.cpu().numpy()
-            confidences = result.boxes.conf.cpu().numpy()
-            class_ids = result.boxes.cls.cpu().numpy()
-            for i in range(len(boxes)):
-                box = boxes[i]
-                confidence = float(confidences[i])
-                class_id = int(class_ids[i])
+class WeaponDetector:
+    def __init__(self, model_path='yolov8n.pt'):
+        print("Loading YOLOv8 model")
+        self.model = YOLO(model_path)
+        self.weapon_classes = [43, 76]
+        
+    def detect_weapons(self, image_path, conf_threshold=0.5, save_result=True):
+        if not os.path.exists(image_path):
+            print(f"Error: Image not found at {image_path}")
+            return False, 0
+        
+        image = cv2.imread(image_path)
+        
+        results = self.model.predict(
+            source=image,
+            conf=conf_threshold,
+            classes=self.weapon_classes,
+            save=save_result
+        )
+        
+        detections = results[0].boxes
+        weapon_count = len(detections)
+        weapon_detected = weapon_count > 0
+        
+        annotated_image = results[0].plot()
+        
+        if weapon_detected:
+            print(f"WARNING: {weapon_count} weapon(s) detected")
+            for i, box in enumerate(detections):
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
                 class_name = self.model.names[class_id]
-                detection = {
-                    'id': str(uuid4()),
-                    'class_name': class_name,
-                    'class_id': class_id,
-                    'confidence': confidence,
-                    'bbox': {
-                        'x1': float(box[0]),
-                        'y1': float(box[1]),
-                        'x2': float(box[2]),
-                        'y2': float(box[3])
-                    },
-                    'center': {
-                        'x': float((box[0] + box[2]) / 2),
-                        'y': float((box[1] + box[3]) / 2)
-                    },
-                    'area': float((box[2] - box[0]) * (box[3] - box[1]))
-                }
-                detections.append(detection)
-                threat_level = self._assess_threat_level(class_name, confidence)
-                if threat_level > 0:
-                    threats_detected.append({
-                        **detection,
-                        'threat_level': threat_level,
-                        'threat_category': self._get_threat_category(class_name)
-                    })
-        return {
-            'detection_id': str(uuid4()),
-            'source': source,
-            'timestamp': datetime.utcnow().isoformat(),
-            'total_detections': len(detections),
-            'detections': detections,
-            'threats_count': len(threats_detected),
-            'threats': threats_detected,
-            'image_dimensions': {
-                'width': int(result.orig_shape[1]) if hasattr(result, "orig_shape") else None,
-                'height': int(result.orig_shape[0]) if hasattr(result, "orig_shape") else None
-            }
-        }
+                print(f"{class_name} (confidence: {confidence:.2f})")
+        else:
+            print("No weapons detected")
+        
+        if save_result:
+            output_path = f"weapon_detection_{os.path.basename(image_path)}"
+            cv2.imwrite(output_path, annotated_image)
+            print(f"Annotated image saved to: {output_path}")
+        
+        cv2.imshow('Weapon Detection', annotated_image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        
+        return weapon_detected, weapon_count
+    
+    def detect_all_objects(self, image_path, conf_threshold=0.5):
+        """
+        Detect all objects in image (useful for testing)
+        
+        Args:
+            image_path: Path to input image
+            conf_threshold: Confidence threshold for detection
+        """
+        results = self.model.predict(
+            source=image_path,
+            conf=conf_threshold,
+            save=True
+        )
+        
+        detections = results[0].boxes
+        print(f"\nDetected {len(detections)} objects:")
+        for box in detections:
+            class_id = int(box.cls[0])
+            confidence = float(box.conf[0])
+            class_name = self.model.names[class_id]
+            print(f"  - {class_name} (ID: {class_id}, confidence: {confidence:.2f})")
 
-    def _assess_threat_level(self, class_name: str, confidence: float) -> int:
-        cname = class_name.lower()
-        if cname in ['knife', 'gun', 'rifle', 'pistol', 'bat', 'stick', 'hammer', 'crowbar']:
-            return 5 if confidence > 0.8 else 4 if confidence > 0.6 else 3
-        elif cname == 'person':
-            return 2 if confidence > 0.8 else 1
-        elif cname in ['bag', 'suitcase', 'backpack']:
-            return 2 if confidence > 0.7 else 1
-        return 0
 
-    def _get_threat_category(self, class_name: str) -> str:
-        class_lower = class_name.lower()
-        for category, classes in self.threat_classes.items():
-            if class_lower in [c.lower() for c in classes]:
-                return category
-        return 'unknown'
+def main():
+    """
+    Main function to run weapon detection
+    """
+    # Initialize detector
+    detector = WeaponDetector(model_path='yolov8n.pt')
+    
+    # Path to your image
+    image_path = "test_image.jpg"  # Change this to your image path
+    
+    # Detect weapons
+    print(f"\nAnalyzing image: {image_path}")
+    print("-" * 50)
+    
+    weapon_detected, count = detector.detect_weapons(
+        image_path=image_path,
+        conf_threshold=0.3,  # Lower threshold for better detection
+        save_result=True
+    )
+    
+    # Optional: Uncomment to see all detected objects
+    # print("\n" + "="*50)
+    # print("ALL OBJECTS DETECTED:")
+    # detector.detect_all_objects(image_path, conf_threshold=0.3)
 
-    def get_model_info(self) -> Dict[str, Any]:
-        if not self.model:
-            return {}
-        return {
-            'model_path': self.model_path,
-            'model_type': 'YOLOv8',
-            'classes': list(self.model.names.values()),
-            'num_classes': len(self.model.names)
-        }
+
+if __name__ == "__main__":
+    main()
