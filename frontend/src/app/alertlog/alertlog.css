@@ -1,0 +1,37 @@
+.full-page-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background-color: #D7D7D7;
+    font-family: Arial, sans-serif;
+}
+
+.page-header {
+    background-color: #F4F4F4;
+    padding: 40px 30px;
+    font-size: 2.4em;
+    font-weight: bold;
+    color: #333;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    display: flex;
+    align-items: center;
+    gap: 1em;
+    height: 0.7em; 
+}
+
+.back {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: black;
+}
+
+.back mat-icon {
+    font-size: 2.3em; 
+}
+
+.alert-content {
+    display: flex;
+    gap: 20px;
+    padding: 20px;
+}
