@@ -14,8 +14,10 @@ interface Status {
   styleUrl: './dashboard.css'
 })
 
-
 export class Dashboard implements OnInit{
+
+  cameraName: string = 'Camera Name';
+
   /*dummy data...*/
   recentAlerts: Status[] = [
     { timestamp: 'Time Stamp', level: 'Low' },

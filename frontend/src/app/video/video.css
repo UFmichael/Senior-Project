@@ -35,3 +35,15 @@
     gap: 20px;
     padding: 20px;
 }
+
+
+.camera-button {
+    background-color: #5D94E6;
+    color:#F4F4F4;
+    border: none;
+    border-radius: 5px;
+    font-size: 1.45em;
+    width: 12vw;
+    cursor: pointer;
+    padding: 0.5em 0.5em;
+}

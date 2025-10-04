@@ -8,7 +8,12 @@ import { MatIconModule } from '@angular/material/icon'
   templateUrl: './video.html',
   styleUrl: './video.css'
 })
+
 export class Video {
+
+  cameraName1: string = 'Camera Name One';
+  cameraName2: string = 'Camera Name Two';
+
   constructor(private router: Router) {}
 
   goDashboard() {
