@@ -9,10 +9,11 @@
 .page-header {
     background-color: #F4F4F4;
     padding: 40px;
-    font-size: 2em;
+    font-size: 2.4em;
     font-weight: bold;
     color: #333;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    height: 0.7em; 
 }
 
 .signup-container {
