@@ -2,11 +2,18 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from core.config import get_settings
-from core.security import authenticate_user 
+from core.security import authenticate_user, get_password_hash
 from sqlalchemy.orm import Session
 from core.dependencies import DBSession, get_db, get_user
 from core.security import authenticate_user, create_access_token, create_refresh_token, verify_token
 from entities.auth.schema import Token, AccessTokenResponse, RefreshToken
+
+from pydantic import BaseModel
+from entities.common.models.model_user import User
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
 
 router = APIRouter(
     prefix='/auth', 
@@ -36,7 +43,6 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         expires_delta=timedelta(minutes = settings.REFRESH_TOKEN_EXPIRE_MINUTES)
         )
     
-    # By the OAuth2 convention we need to return seconds in the body. That is why conversion is needed here.
     access_token_expires = timedelta(minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_token_expires = timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
 
@@ -79,4 +85,27 @@ def refresh_access_token(payload: RefreshToken, db: DBSession) -> AccessTokenRes
         access_token=access_token,
         token_type="bearer",
         expires_in=int(access_expires.total_seconds())
+    )
+
+@router.post("/signup", response_model=Token, status_code=201)
+def signup(user: UserCreate, db: Session = Depends(get_db)) -> Token:
+    existing_user = db.query(User).filter(User.username == user.username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    hashed_pw = get_password_hash(user.password[:72])
+    new_user = User(username=user.username, hashed_password=hashed_pw)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    access_token = create_access_token(subject=new_user.id)
+    refresh_token = create_refresh_token(subject=new_user.id)
+
+    access_token_expires = timedelta(minutes=60)  # or your settings
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=int(access_token_expires.total_seconds())
     )

@@ -15,12 +15,21 @@ def create_app() -> FastAPI:
     app.add_middleware(ProcessTimeMiddleware)
 
 
+    # app.add_middleware(
+    #     CORSMiddleware, 
+    #     allow_origins = settings.ALLOWED_ORIGINS,
+    #     allow_credentials = True, 
+    #     allow_methods = ["*"],
+    #     allow_headers = ["Authorization", "Content-Type"]
+    # )
+
+    # It was breaking everything ...
     app.add_middleware(
         CORSMiddleware, 
-        allow_origins = settings.ALLOWED_ORIGINS,
+        allow_origins = ["*"],
         allow_credentials = True, 
         allow_methods = ["*"],
-        allow_headers = ["Authorization", "Content-Type"]
+        allow_headers = ["*"]
     )
 
     register_routes(app)

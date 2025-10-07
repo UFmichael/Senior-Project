@@ -1,4 +1,4 @@
-<div class="full-page-wrapper">
+<!-- <div class="full-page-wrapper">
     <header class="page-header">
         Sign Up
     </header>
@@ -14,6 +14,33 @@
                     <input type="password" id="password" name="password" [(ngModel)]="password">
                 </div>
                 <button type="submit" class="signup-button">Sign Up</button>
+            </form>
+            <a [routerLink]="'/login'" class="login-link">Login</a>
+        </div>
+    </div>
+</div> -->
+
+<div class="full-page-wrapper">
+    <header class="page-header">
+        Sign Up
+    </header>
+    <div class="signup-container">
+        <div class="signup-card">
+            <form #signupForm="ngForm" (ngSubmit)="onSignUp()">
+                <div *ngIf="errorMessage" class="error-message">
+                    {{ errorMessage }}
+                </div>
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" [(ngModel)]="username" [disabled]="isLoading" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" [(ngModel)]="password" [disabled]="isLoading" required>
+                </div>
+                <button type="submit" class="signup-button" [disabled]="isLoading">
+                    {{ isLoading ? 'Creating Account...' : 'Sign Up' }}
+                </button>
             </form>
             <a [routerLink]="'/login'" class="login-link">Login</a>
         </div>

@@ -81,3 +81,12 @@ input[type="password"] {
 .login-link:hover {
     text-decoration: underline;
 }
+
+.error-message {
+    background-color: #ffebee;
+    color: #c62828;
+    padding: 12px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    font-size: 16px;
+}

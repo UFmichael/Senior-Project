@@ -9,7 +9,15 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     ENV: str = 'development'
 
-    ALLOWED_ORIGINS: list[str] = Field(default_factory=list)
+    # ALLOWED_ORIGINS: list[str] = Field(default_factory=list)
+    ALLOWED_ORIGINS: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:4200",
+            "http://localhost:4000",
+            "http://127.0.0.1:4200",
+            "http://127.0.0.1:4000"
+        ]
+    )
 
     # DB Settings
 
