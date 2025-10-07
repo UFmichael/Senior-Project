@@ -1,0 +1,28 @@
+<div class="full-page-wrapper">
+    <header class="page-header">
+        Dashboard
+    </header>
+    <div class="dashboard-content">
+        <div class="card camera-view">
+            <h2>{{ cameraName }}</h2>
+            <div class="camera-holder">
+            </div>
+            <div class="card-footer">
+                <button class="all-camera" (click)="goCamera()">View All Cameras</button>
+                <button class="full-screen">Full Screen</button>
+            </div>
+        </div>
+        <div class="card recent-alerts">
+            <h2>Recent Alerts</h2>
+            <div class="alerts-list">
+                <div *ngFor="let alert of recentAlerts" class="alert-item">
+                    <span>{{ alert.timestamp }}</span>
+                    <span class="alert-level alert-{{ alert.level | lowercase }}">
+                        {{ alert.level }}
+                    </span>
+                </div>
+            </div>
+            <button class="view-all" (click)="goAlerts()">View All Alerts</button>
+        </div>
+    </div>
+</div>
