@@ -33,6 +33,8 @@
     "@angular/platform-server": "^20.2.0",
     "@angular/router": "^20.2.0",
     "@angular/ssr": "^20.2.1",
+    "@nguniversal/express-engine": "16.2.0-rc.0",
+    "@nguniversal/module-map-ngfactory-loader": "9.0.0-next.9",
     "express": "^5.1.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
