@@ -54,11 +54,12 @@ class StreamHandler:
                     
                     if results["detections"]:
                         for detection in results["detections"]:
-                            if detection["confidence"] > 0.5:  # Confidence threshold
+                            if detection["confidence"] > 0.5:  # we should def change this here, confidence of 0.5 is egregiously low
                                 timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
                                 print(f"ALERT [{timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
                                 
                                 #TODO: Save detection details to a database, send notis to frontend, save the frame as an image file, etc.
+
                 
                 except Exception as e:
                     print(f"Error processing frame: {e}")
