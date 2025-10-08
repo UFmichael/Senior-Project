@@ -1,11 +1,13 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from .services import main_stream_handler 
+from entities.common.models.model_user import User
+from core.dependencies import get_current_user
 
 router = APIRouter()
 
 # API endpoint to start the video stream handler.
 @router.post("/start", status_code=200)
-async def start_handler():
+async def start_handler(user: User = Depends(get_current_user)):
     success = main_stream_handler.start() 
     if not success:
         raise HTTPException(status_code=400, detail="Handler is already running.")
@@ -13,7 +15,7 @@ async def start_handler():
 
 # API endpoint to stop the video stream handler.
 @router.post("/stop", status_code=200)
-async def stop_handler():
+async def stop_handler(user: User = Depends(get_current_user)):
     success = main_stream_handler.stop()
     if not success:
         raise HTTPException(status_code=400, detail="Handler is not running or failed to stop.")
