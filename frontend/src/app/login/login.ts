@@ -16,6 +16,6 @@ export class Login {
 
   onLogin() {
     alert("Username: " + this.username + '\n' + "Password: " + this.password);
-    this.router.navigate(['/Dashboard']);
+    this.router.navigate(['/dashboard']);
   }
 }
