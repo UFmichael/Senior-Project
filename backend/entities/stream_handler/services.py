@@ -2,6 +2,9 @@
 import cv2
 import threading
 import time
+import asyncio
+from entities.yolo.model import YOLOModel
+import numpy as np
 
 class StreamHandler:
     def __init__(self, stream_url: str):
@@ -11,9 +14,11 @@ class StreamHandler:
         self._thread = None
         # A threading.Event object that acts as a safe "flag" to signal the thread when to stop.
         self._stop_event = threading.Event()
+        # Initialize the YOLO model
+        self.model = YOLOModel()
 
     # This is the main function that runs continuously in the background thread.
-    def _process_stream(self):
+    async def _process_stream(self):
         print(f"Handler starting: trying to connect to {self.stream_url}")
         
         # This is the outer reconnection loop. It keeps running as long as the stop event isn't set.
@@ -39,10 +44,36 @@ class StreamHandler:
                     print("Stream lost. Attempting to reconnect...")
                     break
                 
-                # Proof backend is processing frames (remove later as it spams console).
-                print(f"Processing frame with shape: {frame.shape}")
+                # Convert frame to bytes for YOLO model
+                is_success, buffer = cv2.imencode(".jpg", frame)
+                if not is_success:
+                    print("Failed to encode frame")
+                    continue
                 
-                # AI MODEL SHOULD GO HERE THIS IS PROCESSING FRAME BY FRAME.
+                # Process frame with YOLO model
+                image_bytes = buffer.tobytes()
+                try:
+                    # Need to use await here since predict is an async function
+                    results = await self.model.predict(image_bytes)
+                    
+                    # Process detections
+                    if results["detections"]:
+                        for detection in results["detections"]:
+                            if detection["confidence"] > 0.5:  # Confidence threshold
+                                # Log detection with timestamp
+                                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                                print(f"⚠️ ALERT [{timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
+                                
+                                # Here you could add additional handling like:
+                                # - Save detection details to a database
+                                # - Send notifications
+                                # - Save the frame as an image file
+                                # - Trigger other security measures
+                
+                except Exception as e:
+                    print(f"Error processing frame: {e}")
+                    import traceback
+                    traceback.print_exc()  # Print full error traceback
             
             # Closes the connection with the stream.
             capture.release()
@@ -58,9 +89,20 @@ class StreamHandler:
 
         # Resets the stop flag to "False", allowing the while loops in "_process_stream" to run.
         self._stop_event.clear()
-        # Creates a new thread object. The tread will execute the "_process_stream" function.
-        self._thread = threading.Thread(target=self._process_stream, daemon=True)
-        # Starts the execution of the "_process_stream" method in the background.
+        
+        # Create an event loop in the new thread
+        async def run_async():
+            await self._process_stream()
+            
+        def thread_target():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_async())
+            loop.close()
+        
+        # Creates a new thread object with the async-aware target
+        self._thread = threading.Thread(target=thread_target, daemon=True)
+        # Starts the execution of the thread
         self._thread.start()
 
         print("Stream handler started.")
