@@ -3,7 +3,7 @@ from .model import YOLOModel
 
 router = APIRouter(prefix="/yolo", tags=["YOLO Detection"])
 
-# Initialize YOLO model
+
 model = YOLOModel()
 
 @router.post("/detect")
@@ -11,10 +11,8 @@ async def detect_objects(file: UploadFile = File(...)):
     """
     Endpoint to detect objects in uploaded images
     """
-    # Read image file
     contents = await file.read()
-    
-    # Process image and get predictions
+
     results = await model.predict(contents)
     
     return {"results": results}
