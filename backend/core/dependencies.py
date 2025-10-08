@@ -12,7 +12,7 @@ from entities.common.models.model_user import User
 from entities.user.services import get_user
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 #region DB 
 def get_db() -> Generator[Session, None, None]:
