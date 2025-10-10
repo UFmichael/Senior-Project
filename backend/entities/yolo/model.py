@@ -4,6 +4,7 @@ import io
 from typing import Dict, Any
 
 class YOLOModel:
+    # Note here we could look for a better pre-trained model, this one seems to be doing a little poorly from my tests :(
     def __init__(self, model_path: str = "https://huggingface.co/Hadi959/weapon-detection-yolov8/resolve/main/best.pt"):
         self.model = YOLO(model_path)
         # prefer names from the checkpoint to avoid mismatches
