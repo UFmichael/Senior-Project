@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     DB_USER: str 
     DB_PASS: str
     DB_HOST: str
-    DB_PORT: str = "4200"
+    DB_PORT: str = "5432"
     DB_NAME: str
 
     # Security
