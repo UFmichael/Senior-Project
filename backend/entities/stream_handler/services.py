@@ -48,7 +48,6 @@ class StreamHandler:
                     print(f"[{self.stream_id}] Failed to encode frame")
                     continue
                 
-                print(f"Processing frame with shape: {frame.shape} with stream id {self.stream_id}")
                 # Process frame with YOLO model
                 image_bytes = buffer.tobytes()
                 try:
