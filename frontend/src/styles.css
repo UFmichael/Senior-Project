@@ -14,10 +14,11 @@ body.blue-mode {
     --button-txt: #a0a5cc;
     --inputbox: #4e6275;
     --signup: #4e7c88;
-    --low: #3BA274;
-    --mid: #C68A2D;
-    --high: #C24141;
     --border: #334155;
+    --actived: #4a6896;
+    --active-hover: #6183b4;
+    --actived-txt: #ffffff;
+    --metric-txt: #aaaaaa;
 }
 
 body.dark-mode {
@@ -29,10 +30,11 @@ body.dark-mode {
     --button-txt: #d3d3d3;
     --inputbox: #707070;
     --signup: #c3c7ca;
-    --low: #3BA274;
-    --mid: #C68A2D;
-    --high: #C24141;
     --border: #969696;
+    --actived: #696969;
+    --active-hover: #8f8f8f;
+    --actived-txt: #ffffff;
+    --metric-txt: #aaaaaa;
 }
 
 body.light-mode {
@@ -44,10 +46,11 @@ body.light-mode {
     --button-txt: #F4F4F4;
     --inputbox: #FFF;
     --signup: #6699ff;
-    --low: #16C000;
-    --mid: #EED12B;
-    --high: #FF3F3F;
     --border: #ccc;
+    --actived: #abc7f1;
+    --active-hover: #ccdaee;
+    --actived-txt: #272727;
+    --metric-txt: #202020;
 }
 
 html, body { height: 100%; }

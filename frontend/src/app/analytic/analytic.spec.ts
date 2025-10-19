@@ -1,18 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { Video } from './video';
+import { Analytic } from './analytic';
 
-describe('Video', () => {
-  let component: Video;
-  let fixture: ComponentFixture<Video>;
+describe('Analytic', () => {
+  let component: Analytic;
+  let fixture: ComponentFixture<Analytic>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Video]
+      imports: [Analytic]
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(Video);
+    fixture = TestBed.createComponent(Analytic);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });
