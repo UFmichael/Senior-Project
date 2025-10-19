@@ -1,0 +1,5 @@
+<select [ngModel]="(currentColor$ | async)?.cssClass" (ngModelChange)="onColorChange($event)">
+    <option *ngFor="let color of colors" [value]="color.cssClass">
+        {{ color.name }}
+    </option>
+</select>
