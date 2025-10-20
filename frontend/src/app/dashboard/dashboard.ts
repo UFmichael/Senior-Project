@@ -1,6 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { StreamService } from '../services/stream.service';
 
 interface Status {
   timestamp: string;
@@ -14,23 +15,60 @@ interface Status {
   styleUrl: './dashboard.css'
 })
 
-export class Dashboard implements OnInit{
+export class Dashboard implements OnInit, OnDestroy {
 
   cameraName: string = 'Camera Name';
+  recentAlerts: Status[] = [];
+  isStreamActive: boolean = false;
 
-  /*dummy data...*/
-  recentAlerts: Status[] = [
-    { timestamp: 'Time Stamp', level: 'Low' },
-    { timestamp: 'Time Stamp', level: 'Low' },
-    { timestamp: 'Time Stamp', level: 'Mid' },
-    { timestamp: 'Time Stamp', level: 'Mid' },
-    { timestamp: 'Time Stamp', level: 'High' },
-  ];
-
-  constructor(private router: Router) {}
+  constructor(
+    private router: Router,
+    private streamService: StreamService
+  ) {}
 
   ngOnInit(): void {
+    this.loadRecentAlerts();
+  }
 
+  ngOnDestroy(): void {
+    if (this.isStreamActive) {
+      this.stopStream();
+    }
+  }
+
+  loadRecentAlerts(): void {
+    // Dummy data for now
+    this.recentAlerts = [
+      { timestamp: new Date().toLocaleString(), level: 'Low' },
+      { timestamp: new Date().toLocaleString(), level: 'Low' },
+      { timestamp: new Date().toLocaleString(), level: 'Mid' },
+      { timestamp: new Date().toLocaleString(), level: 'Mid' },
+      { timestamp: new Date().toLocaleString(), level: 'High' },
+    ];
+  }
+
+  startStream(): void {
+    this.streamService.startStream().subscribe({
+      next: (response) => {
+        console.log('Stream started:', response);
+        this.isStreamActive = true;
+      },
+      error: (error) => {
+        console.error('Error starting stream:', error);
+      }
+    });
+  }
+
+  stopStream(): void {
+    this.streamService.stopStream().subscribe({
+      next: (response) => {
+        console.log('Stream stopped:', response);
+        this.isStreamActive = false;
+      },
+      error: (error) => {
+        console.error('Error stopping stream:', error);
+      }
+    });
   }
 
   goAlerts() {
