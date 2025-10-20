@@ -1,26 +1,18 @@
 import { Component } from '@angular/core';
-import { RouterLink, Router } from '@angular/router';
+import { RouterLink, Router} from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { AuthService } from '../services/auth.service';
-import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-login',
-  standalone: true,
-  imports: [RouterLink, FormsModule, CommonModule],
+  imports: [RouterLink, FormsModule],
   templateUrl: './login.html',
-  styleUrls: ['./login.css']
+  styleUrl: './login.css'
 })
 export class Login {
   username: string = '';
   password: string = '';
-  errorMessage: string = '';
-  isLoading: boolean = false;
 
-  constructor(
-    private router: Router,
-    private authService: AuthService
-  ) {}
+  constructor(private router: Router) {}
 
   onLogin() {
     if (!this.username || !this.password) {
