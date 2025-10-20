@@ -62,9 +62,8 @@ export class Signup {
       username: this.username,
       password: this.password
     };
-
+    
     const headers = new HttpHeaders({ 'Content-Type': 'application/json' });
-
     this.http.post(`${environment.apiUrl}/users/`, body, { headers }).subscribe({
       next: (response) => {
         this.isLoading = false;

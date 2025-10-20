@@ -27,7 +27,6 @@ export class Login {
       this.errorMessage = 'Please enter username and password';
       return;
     }
-
     this.isLoading = true;
     this.errorMessage = '';
 

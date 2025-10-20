@@ -5,15 +5,20 @@
     <div class="login-container">
         <div class="login-card">
             <form #loginForm="ngForm" (ngSubmit)="onLogin()">
+                <div *ngIf="errorMessage" class="error-message">
+                    {{ errorMessage }}
+                </div>
                 <div class="form-group">
                     <label for="username">Username</label>
-                    <input type="text" id="username" name="username" [(ngModel)]="username">
+                    <input type="text" id="username" name="username" [(ngModel)]="username" [disabled]="isLoading">
                 </div>
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" [(ngModel)]="password">
+                    <input type="password" id="password" name="password" [(ngModel)]="password" [disabled]="isLoading">
                 </div>
-                <button type="submit" class="login-button">Login</button>
+                <button type="submit" class="login-button" [disabled]="isLoading">
+                    {{ isLoading ? 'Logging in...' : 'Login' }}
+                </button>
             </form>
             <a [routerLink]="'/signup'" class="signup-link">Sign up</a>
         </div>

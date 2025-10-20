@@ -26,7 +26,7 @@ export class AuthService {
   private tokenKey = 'access_token';
   private refreshTokenKey = 'refresh_token';
   private isBrowser: boolean;
-  
+
   private currentUserSubject = new BehaviorSubject<UserResponse | null>(null);
   public currentUser$ = this.currentUserSubject.asObservable();
 
@@ -36,7 +36,7 @@ export class AuthService {
     @Inject(PLATFORM_ID) platformId: Object
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
-    
+
     if (this.isBrowser && this.getToken()) {
       this.loadCurrentUser();
     }
@@ -95,7 +95,7 @@ export class AuthService {
    */
   loadCurrentUser(): void {
     if (!this.isBrowser) return;
-    
+
     this.http.get<UserResponse>(`${this.apiUrl}/users/me`)
       .subscribe({
         next: (user) => this.currentUserSubject.next(user),
