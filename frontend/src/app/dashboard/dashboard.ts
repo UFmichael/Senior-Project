@@ -1,6 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
+import { StreamService } from '../services/stream.service';
 import { Colorpicker } from '../colorpicker/colorpicker';
 
 interface Camera {
@@ -78,12 +79,12 @@ export class Dashboard {
     console.log(`Viewing event details for: ${event.type} at ${event.location}`);
   }
 
-  goToAnalytics(): void {
-    this.router.navigate(['/analytic'])
+  goToAlertLog() {
+    this.router.navigate(['/alertlog']);
   }
 
-  goToAlertLog(): void {
-    this.router.navigate(['/alertlog']);
+  goToAnalytics(): void {
+    this.router.navigate(['/analytic'])
   }
 
   getCameraStatusClass(status: string): string {
