@@ -3,7 +3,7 @@ from . import services
 from entities.common.models.model_user import User
 from core.dependencies import get_current_user
 
-router = APIRouter()
+router = APIRouter(prefix="/stream", tags=["Stream"])
 
 # API endpoint to start the video stream handler.
 @router.post("/{stream_id}/start", status_code=200)
