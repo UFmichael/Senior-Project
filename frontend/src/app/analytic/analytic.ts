@@ -1,19 +1,15 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon'
+import { Colorpicker } from '../colorpicker/colorpicker';
 
 @Component({
-  selector: 'app-video',
-  imports: [MatIconModule],
-  templateUrl: './video.html',
-  styleUrl: './video.css'
+  selector: 'app-analytic',
+  imports: [MatIconModule, Colorpicker],
+  templateUrl: './analytic.html',
+  styleUrl: './analytic.css'
 })
-
-export class Video {
-
-  cameraName1: string = 'Camera Name One';
-  cameraName2: string = 'Camera Name Two';
-
+export class Analytic {
   constructor(private router: Router) {}
 
   goDashboard() {

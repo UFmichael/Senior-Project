@@ -1,16 +1,11 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon'
-
-/*for later usage*/
-interface Status {
-  timestamp: string;
-  level: 'Low' | 'Mid' | 'High';
-}
+import { Colorpicker } from '../colorpicker/colorpicker';
 
 @Component({
   selector: 'app-alertlog',
-  imports: [MatIconModule],
+  imports: [MatIconModule, Colorpicker],
   templateUrl: './alertlog.html',
   styleUrl: './alertlog.css'
 })

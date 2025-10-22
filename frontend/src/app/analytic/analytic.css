@@ -2,48 +2,37 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background-color: #D7D7D7;
+    background-color: var(--background-color);
     font-family: Arial, sans-serif;
 }
 
 .page-header {
-    background-color: #F4F4F4;
+    background-color: var(--carddisplay);
     padding: 40px 30px;
     font-size: 2.4em;
     font-weight: bold;
-    color: #333;
+    color: var(--text-color);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     display: flex;
     align-items: center;
     gap: 1em;
     height: 0.7em; 
+    justify-content: space-between;
 }
 
 .back {
     background: none;
     border: none;
     cursor: pointer;
-    color: black;
+    color: var(--text-color);
 }
 
 .back mat-icon {
     font-size: 2.3em; 
 }
 
-.camera-content {
+.analytic-content {
     display: flex;
     gap: 20px;
     padding: 20px;
-}
-
-
-.camera-button {
-    background-color: #5D94E6;
-    color:#F4F4F4;
-    border: none;
-    border-radius: 5px;
-    font-size: 1.45em;
-    width: 12vw;
-    cursor: pointer;
-    padding: 0.5em 0.5em;
 }

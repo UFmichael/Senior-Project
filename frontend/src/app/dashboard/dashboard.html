@@ -1,28 +1,77 @@
 <div class="full-page-wrapper">
     <header class="page-header">
-        Dashboard
-    </header>
-    <div class="dashboard-content">
-        <div class="card camera-view">
-            <h2>{{ cameraName }}</h2>
-            <div class="camera-holder">
-            </div>
-            <div class="card-footer">
-                <button class="all-camera" (click)="goCamera()">View All Cameras</button>
-                <button class="full-screen">Full Screen</button>
-            </div>
+        <div class="header-title">
+            Dashboard
         </div>
-        <div class="card recent-alerts">
-            <h2>Recent Alerts</h2>
-            <div class="alerts-list">
-                <div *ngFor="let alert of recentAlerts" class="alert-item">
-                    <span>{{ alert.timestamp }}</span>
-                    <span class="alert-level alert-{{ alert.level | lowercase }}">
-                        {{ alert.level }}
-                    </span>
+        <app-colorpicker></app-colorpicker>
+    </header>
+
+    <div class="main-content">
+        <aside class="sidebar">
+            <h3 class="sidebar-heading">CAMERA LIST</h3>
+            <nav class="camera-list">
+                <a class="camera-item" 
+                   *ngFor="let camera of cameras" 
+                   [class.active]="camera.id === selectedCameraId" 
+                   (click)="selectCamera(camera.id)">
+                    <span>{{ camera.name }}</span>
+                    <span class="status-dot" [ngClass]="getCameraStatusClass(camera.status)"></span>
+                </a>
+            </nav>
+
+            <h3 class="sidebar-heading recent-events-heading">RECENT EVENTS</h3>
+            <div class="recent-events-list">
+                <div class="event-item" 
+                     *ngFor="let event of recentEvents" 
+                     [class.high-alert]="event.alertLevel === 'high'"
+                     [class.warning-alert]="event.alertLevel === 'warning'"
+                     (click)="viewEvent(event)">
+                    <div class="event-details">
+                        <p class="event-type">{{ event.type }}</p>
+                        <p class="event-location">{{ event.location }}</p>
+                    </div>
+                    <span class="event-time">{{ event.time }}</span>
                 </div>
             </div>
-            <button class="view-all" (click)="goAlerts()">View All Alerts</button>
+
+            <div class="bottom-sidebar-buttons">
+                <button class="nav-button analytics-button" (click)="goToAnalytics()">SHOW ANALYTICS</button>
+                <button class="nav-button alert-log-button" (click)="goToAlertLog()">VIEW ALERT LOGS</button>
+            </div>
+        </aside>
+
+        <div class="video-feed-container">
+            <div class="video-feed-header">
+                <h2 class="feed-title">{{ selectedCamera?.name || 'Select a Camera' }}</h2>
+                <p class="feed-subtitle">{{ selectedCamera?.location || 'N/A' }} - Camera {{ selectedCamera?.id || '--' }}</p>
+                <button class="control-btn">Fullscreen</button>
+            </div>
+
+            <div class="video-placeholder">
+                <span class="live-indicator" [ngClass]="currentLiveStatusClass">
+                    {{ currentLiveStatusText }}
+                </span>
+                <span class="timestamp">{{ currentTime | date:'HH:mm:ss' }}</span>
+            </div>
+
+            <div class="bottom-metrics-bar">
+                <div class="metric-card">
+                    <p class="metric-label">People Count</p>
+                    <p class="metric-value">12</p>
+                    <p class="metric-subtext">in current view</p>
+                </div>
+                <div class="metric-card">
+                    <p class="metric-label">Alerts Today</p>
+                    <p class="metric-value">3</p>
+                    <p class="metric-subtext">2 resolved</p>
+                </div>
+                <div class="metric-card recording-status">
+                    <p class="metric-label">Recording</p>
+                    <p class="metric-value status-active">Active</p>
+                    <p class="metric-subtext">24/7 storage</p>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
