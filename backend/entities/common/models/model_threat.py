@@ -10,7 +10,7 @@ class Threat(Base):
     __tablename__ = "Threats" 
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    admin: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    admin: Mapped[int] = mapped_column(ForeignKey("Users.id", ondelete="CASCADE"), nullable=False, index=True)
     threat_level: Mapped[ThreatLevels] = mapped_column(SQLEnum(ThreatLevels), default=ThreatLevels.LOW, nullable=False)
     threat_status: Mapped[ThreatStatus] = mapped_column(SQLEnum(ThreatStatus), default=ThreatStatus.MONITORING, nullable=False)
     predicted_age: Mapped[int] = mapped_column(Integer, nullable=True)
