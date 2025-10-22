@@ -9,7 +9,7 @@ import cv2
 class FaceModel: 
 
     # Face model for making predicitons based 
-    def __init__(self, actions: list[str] = ['age', 'gender', 'emotion'], model_type: str = "DeepFace" ) -> None:
+    def __init__(self, actions: list[str] = ['age', 'gender', 'emotion'], model_type: str = "Facenet512" ) -> None:
         self.model = DeepFace
         self.actions = actions
         self.model_type = model_type
@@ -25,6 +25,7 @@ class FaceModel:
     # Prediction function (Trying to kind of mimic YOLO)        
     async def predict(self, image_bytes: bytes) -> Dict[str, Any]:
         try:
+            
             img_pil = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             img_size = img_pil.size  
             

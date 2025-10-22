@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from PIL import UnidentifiedImageError
-from .model import FaceModel
+from .services import FaceModel
 
 router = APIRouter(prefix="/face", tags=["Face Detection"])
 
