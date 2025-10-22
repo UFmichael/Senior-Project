@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime 
 from sqlalchemy import  String, func, TIMESTAMP
 from sqlalchemy.orm import mapped_column, Mapped 
-from backend.core.enums import ThreatLevels, ThreatStatus
+from core.enums import ThreatLevels, ThreatStatus
 from core.database import Base
 from sqlalchemy import String, Enum as SQLEnum, ForeignKey, CheckConstraint, Integer, func, Float, Numeric, event, text
 
