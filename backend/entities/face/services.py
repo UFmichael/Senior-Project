@@ -6,8 +6,8 @@ import numpy as np
 import asyncio
 import cv2
 
+# TODO Make schemas for the predicitons so that we can have defined types throughout the project, right now I am defining objects in each function
 class FaceModel: 
-
     # Face model for making predicitons based 
     def __init__(self, actions: list[str] = ['age', 'gender', 'emotion'], model_type: str = "Facenet512" ) -> None:
         self.model = DeepFace
@@ -71,6 +71,7 @@ class FaceModel:
                 "gender_scores": face_data.get("gender"),
             }
             
+            # Not sure if this is the type that we want to be returning, most likely will have to come up with a schema for this
             detections.append({
                 "confidence": confidence,  
                 "bbox": [x1, y1, x2, y2],
