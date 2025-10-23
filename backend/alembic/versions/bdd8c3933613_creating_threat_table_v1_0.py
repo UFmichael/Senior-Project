@@ -1,8 +1,8 @@
 """creating Threat table v1.0
 
-Revision ID: 114359c74d66
+Revision ID: bdd8c3933613
 Revises: f867c5ef3cb3
-Create Date: 2025-10-22 00:21:34.792658
+Create Date: 2025-10-22 21:24:44.745768
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '114359c74d66'
+revision: str = 'bdd8c3933613'
 down_revision: Union[str, Sequence[str], None] = 'f867c5ef3cb3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

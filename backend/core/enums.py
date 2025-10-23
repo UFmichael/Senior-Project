@@ -7,12 +7,12 @@ class LogLevels(StrEnum):
     error = "ERROR"
     debug = "DEBUG"
 
-class ThreatLevels(Enum):
-    NONE = 0
-    LOW = 1
-    MEDIUM = 2
-    HIGH = 3
-    ULTRA = 4
+class ThreatLevels(StrEnum):
+    NONE = "NONE"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    ULTRA = "ULTRA"
 
 class ThreatStatus(StrEnum):
     ACTIVE  = "ACTIVE"
