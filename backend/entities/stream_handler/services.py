@@ -15,6 +15,10 @@ class StreamHandler:
         self._stop_event = threading.Event()
         self.model = YOLOModel()
 
+        # For frontend stream
+        self._latest_frame = None
+        self._frame_lock = threading.Lock()
+    
     # This is the main function that runs continuously in the background thread
     async def _process_stream(self):
         print(f"Handler for '{self.stream_id}' starting: trying to connect to {self.stream_url}")
@@ -48,8 +52,13 @@ class StreamHandler:
                     print(f"[{self.stream_id}] Failed to encode frame")
                     continue
                 
-                # Process frame with YOLO model
                 image_bytes = buffer.tobytes()
+
+                # Grabbing image data for frontend
+                with self._frame_lock:
+                    self._latest_frame = image_bytes
+
+                # Process frame with YOLO model
                 try:
                     results = await self.model.predict(image_bytes)
                     
@@ -116,7 +125,14 @@ class StreamHandler:
     # A helper method to check if the thread is active
     def is_running(self) -> bool:
         return self._thread and self._thread.is_alive()
+    
+    # Function to return latest frame stored (moved inside StreamHandler class)
+    async def get_latest_frame(self):
+        with self._frame_lock:
+            return self._latest_frame
 
+
+# Global dictionary to store active stream handlers
 stream_handlers = {}
 _lock = threading.Lock()
 
@@ -141,3 +157,6 @@ def stop_stream_processing(stream_id: str):
             del stream_handlers[stream_id]
         
         return success
+
+def get_stream_handler(stream_id: str):
+    return stream_handlers.get(stream_id)

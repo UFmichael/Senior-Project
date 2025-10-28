@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 
 interface StreamResponse {
   status: string;
@@ -12,7 +13,7 @@ interface StreamResponse {
   providedIn: 'root'
 })
 export class StreamService {
-  private apiUrl = 'http://localhost:8000';
+  private apiUrl = environment.apiUrl ? `${environment.apiUrl}/stream` : 'http://localhost:8000/stream';
   
   private streamStatusSubject = new BehaviorSubject<boolean>(false);
   public streamStatus$ = this.streamStatusSubject.asObservable();
@@ -22,8 +23,8 @@ export class StreamService {
   /**
    * Start the video stream handler
    */
-  startStream(): Observable<StreamResponse> {
-    return this.http.post<StreamResponse>(`${this.apiUrl}/start`, {})
+  startStream(streamId: string): Observable<StreamResponse> {
+    return this.http.post<StreamResponse>(`${this.apiUrl}/${streamId}/start`, {})
       .pipe(
         tap(() => this.streamStatusSubject.next(true)),
         catchError(error => {
@@ -34,10 +35,10 @@ export class StreamService {
   }
 
   /**
-   * Stop the video stream handler
+   * Stop the video stream handler  
    */
-  stopStream(): Observable<StreamResponse> {
-    return this.http.post<StreamResponse>(`${this.apiUrl}/stop`, {})
+  stopStream(streamId: string): Observable<StreamResponse> {
+    return this.http.post<StreamResponse>(`${this.apiUrl}/${streamId}/stop`, {})
       .pipe(
         tap(() => this.streamStatusSubject.next(false)),
         catchError(error => {
@@ -52,5 +53,26 @@ export class StreamService {
    */
   isStreamRunning(): boolean {
     return this.streamStatusSubject.value;
+  }
+
+  getStreamFeedUrl(streamId: string): string {
+    const token = localStorage.getItem('auth_token');
+    
+    if (token) {
+      return `${this.apiUrl}/${streamId}/feed?token=${token}`;
+    }
+    
+    return `${this.apiUrl}/${streamId}/feed`;
+  }
+
+  getStreamFeedUrlWithAuth(streamId: string): string {
+    return `${this.apiUrl}/${streamId}/feed`;
+  }
+
+  getAuthHeaders(): HttpHeaders {
+    const token = localStorage.getItem('auth_token');
+    return new HttpHeaders({
+      'Authorization': `Bearer ${token}`
+    });
   }
 }

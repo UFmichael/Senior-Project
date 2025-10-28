@@ -25,7 +25,7 @@ interface Event {
   styleUrl: './dashboard.css'
 })
 
-export class Dashboard {
+export class Dashboard implements OnInit, OnDestroy {
   //dummy data...
   cameras: Camera[] = [
     { name: 'Main Entrance', location: 'Building A', id: 1, status: 'active' },
@@ -41,9 +41,15 @@ export class Dashboard {
   selectedCameraId: number | null = null;
   selectedCamera: Camera | undefined;
   public currentTime: Date = new Date();
+  
+  // New properties for video streaming
+  streamUrl: string = '';
+  isStreamActive: boolean = false;
 
-  constructor(private router: Router) 
-  {
+  constructor(
+    private router: Router,
+    private streamService: StreamService
+  ) {
     setInterval(() => {
       this.currentTime = new Date();
     }, 1000);
@@ -68,10 +74,55 @@ export class Dashboard {
     }
   }
 
+  ngOnDestroy(): void {
+    // Stop the stream when component is destroyed
+    if (this.selectedCameraId && this.isStreamActive) {
+      const streamId = this.selectedCameraId.toString();
+      this.streamService.stopStream(streamId).subscribe({
+        next: () => console.log('Stream stopped on component destroy'),
+        error: (err) => console.error('Error stopping stream:', err)
+      });
+    }
+  }
+
   selectCamera(id: number): void {
+    // Stop previous stream if any
+    if (this.selectedCameraId && this.isStreamActive) {
+      const previousStreamId = this.selectedCameraId.toString();
+      this.streamService.stopStream(previousStreamId).subscribe({
+        next: () => console.log('Previous stream stopped'),
+        error: (err) => console.error('Error stopping previous stream:', err)
+      });
+    }
+
     this.selectedCameraId = id;
     this.selectedCamera = this.cameras.find(c => c.id === id);
     console.log(`Camera selected: ${this.selectedCamera?.name}`);
+    
+    // Start new stream if camera is active
+    if (this.selectedCamera?.status === 'active') {
+      this.startVideoStream(id);
+    } else {
+      this.isStreamActive = false;
+      this.streamUrl = '';
+    }
+  }
+
+  startVideoStream(cameraId: number): void {
+    const streamId = cameraId.toString();
+    
+    // Start the stream processing on backend
+    this.streamService.startStream(streamId).subscribe({
+      next: (response) => {
+        console.log('Stream started:', response);
+        this.streamUrl = this.streamService.getStreamFeedUrl(streamId);
+        this.isStreamActive = true;
+      },
+      error: (error) => {
+        console.error('Error starting stream:', error);
+        this.isStreamActive = false;
+      }
+    });
   }
 
   //place holder...
