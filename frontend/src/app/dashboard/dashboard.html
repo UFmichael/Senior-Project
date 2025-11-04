@@ -44,31 +44,57 @@
             <div class="video-feed-header">
                 <h2 class="feed-title">{{ selectedCamera?.name || 'Select a Camera' }}</h2>
                 <p class="feed-subtitle">{{ selectedCamera?.location || 'N/A' }} - Camera {{ selectedCamera?.id || '--' }}</p>
-                <button class="control-btn">Fullscreen</button>
+                <button class="control-btn" (click)="toggleFullscreen()">Fullscreen</button>
             </div>
 
-            <div class="video-placeholder">
+            <!-- Grey placeholder when no stream is active -->
+            <div class="video-placeholder" *ngIf="!isStreamActive || !streamUrl">
                 <span class="live-indicator" [ngClass]="currentLiveStatusClass">
                     {{ currentLiveStatusText }}
                 </span>
                 <span class="timestamp">{{ currentTime | date:'HH:mm:ss' }}</span>
             </div>
 
+            <!-- MJPEG stream container when stream is active -->
+            <div class="video-container" *ngIf="isStreamActive && streamUrl">
+                <!-- Using img element for MJPEG stream -->
+                <img #videoElement 
+                     class="video-stream"
+                     [src]="streamUrl"
+                     (error)="handleVideoError($event)"
+                     (load)="onVideoMetadataLoaded()">
+                
+                <span class="live-indicator stream-active" [ngClass]="currentLiveStatusClass">
+                    {{ currentLiveStatusText }}
+                </span>
+                <span class="timestamp">{{ currentTime | date:'HH:mm:ss' }}</span>
+                
+                <!-- Video controls overlay -->
+                <div class="video-controls">
+                    <button class="control-icon" (click)="takeSnapshot()" title="Take Snapshot">
+                        📷
+                    </button>
+                    <button class="control-icon" (click)="toggleRecording()" title="Toggle Recording">
+                        <span [class.recording]="isRecording">⏺</span>
+                    </button>
+                </div>
+            </div>
+
             <div class="bottom-metrics-bar">
                 <div class="metric-card">
                     <p class="metric-label">People Count</p>
-                    <p class="metric-value">12</p>
+                    <p class="metric-value">{{ peopleCount }}</p>
                     <p class="metric-subtext">in current view</p>
                 </div>
                 <div class="metric-card">
                     <p class="metric-label">Alerts Today</p>
-                    <p class="metric-value">3</p>
-                    <p class="metric-subtext">2 resolved</p>
+                    <p class="metric-value">{{ alertsToday }}</p>
+                    <p class="metric-subtext">{{ resolvedAlerts }} resolved</p>
                 </div>
                 <div class="metric-card recording-status">
                     <p class="metric-label">Recording</p>
-                    <p class="metric-value status-active">Active</p>
-                    <p class="metric-subtext">24/7 storage</p>
+                    <p class="metric-value" [class.status-active]="isRecording">{{ isRecording ? 'Active' : 'Inactive' }}</p>
+                    <p class="metric-subtext">{{ isRecording ? '24/7 storage' : 'Not recording' }}</p>
                 </div>
             </div>
 

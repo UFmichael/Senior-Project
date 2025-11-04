@@ -77,7 +77,7 @@ export class AuthService {
       return throwError(() => new Error('No refresh token available'));
     }
 
-    return this.http.post(`${this.apiUrl}/token/refresh`, {
+    return this.http.post(`${this.apiUrl}/auth/token/refresh`, {
       refresh_token: refreshToken
     }).pipe(
       tap((response: any) => {
