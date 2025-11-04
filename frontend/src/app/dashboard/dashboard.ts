@@ -62,6 +62,7 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
   private reconnectTimeout: any;
+  private streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
   constructor(
     private router: Router,
@@ -165,8 +166,7 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
   }
 
   /**
-   * New approach: Parse MJPEG stream properly
-   * MJPEG streams are multipart/x-mixed-replace, so we need to handle them differently
+   * Activate MJPEG stream using fetch API with Authorization header
    */
   private async activateMJPEGStream(streamId: string): Promise<void> {
     this.isStreamActive = true;
@@ -189,6 +189,11 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
       });
 
       if (!response.ok) {
+        if (response.status === 401) {
+          console.error('Authentication failed - redirecting to login');
+          this.router.navigate(['/login']);
+          return;
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -196,26 +201,27 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
       const contentType = response.headers.get('content-type');
       console.log('Stream content-type:', contentType);
 
-      if (contentType && contentType.includes('multipart/x-mixed-replace')) {
-        // This is an MJPEG stream
-        console.log('Detected MJPEG stream');
-        
-        // Read the stream
-        const reader = response.body?.getReader();
-        if (!reader) {
-          console.error('No reader available');
-          return;
-        }
-
-        // Process the stream
-        this.processMJPEGStream(reader);
-        
-      } else {
-        // Fallback: might be a single image
-        console.log('Not an MJPEG stream, treating as single image');
-        const blob = await response.blob();
-        this.displayFrame(blob);
+      if (!contentType || !contentType.includes('multipart/x-mixed-replace')) {
+        console.error('Invalid content type for MJPEG stream:', contentType);
+        this.handleStreamError();
+        return;
       }
+
+      // This is an MJPEG stream
+      console.log('Connected to MJPEG stream successfully');
+      
+      // Read the stream
+      const reader = response.body?.getReader();
+      if (!reader) {
+        console.error('No reader available');
+        this.handleStreamError();
+        return;
+      }
+
+      this.streamReader = reader;
+
+      // Process the stream
+      this.processMJPEGStream(reader);
 
     } catch (error) {
       console.error('Failed to activate MJPEG stream:', error);
@@ -249,7 +255,7 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
         let startIdx = this.findJPEGStart(buffer);
         let endIdx = this.findJPEGEnd(buffer, startIdx);
 
-        if (startIdx !== -1 && endIdx !== -1) {
+        while (startIdx !== -1 && endIdx !== -1) {
           // Extract the JPEG image
           const jpegData = buffer.slice(startIdx, endIdx + 2);
           
@@ -259,6 +265,10 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
           
           // Remove processed data from buffer
           buffer = buffer.slice(endIdx + 2);
+          
+          // Look for next frame
+          startIdx = this.findJPEGStart(buffer);
+          endIdx = this.findJPEGEnd(buffer, startIdx);
         }
 
         // Prevent buffer from growing too large
@@ -269,8 +279,10 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
       }
     } catch (error) {
       console.error('Error processing MJPEG stream:', error);
+      this.handleStreamError();
     } finally {
       reader.cancel();
+      this.streamReader = null;
     }
   }
 
@@ -323,10 +335,6 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
     this.reconnectAttempts = 0;
   }
 
-  private initializeVideoStream(): void {
-    console.log('Video stream initialized');
-  }
-
   private handleStreamError(): void {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
@@ -346,6 +354,12 @@ export class Dashboard implements OnInit, OnDestroy, AfterViewInit {
   private stopCurrentStream(): void {
     // Stop processing flag
     this.isStreamActive = false;
+    
+    // Cancel the stream reader if active
+    if (this.streamReader) {
+      this.streamReader.cancel().catch(err => console.error('Error canceling stream:', err));
+      this.streamReader = null;
+    }
     
     // Clean up blob URL if exists
     if (this.videoElement && this.videoElement.nativeElement) {
