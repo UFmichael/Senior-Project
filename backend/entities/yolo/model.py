@@ -43,9 +43,9 @@ class YOLOModel:
         model_path: str = "https://huggingface.co/Subh775/Threat-Detection-YOLOv8n/resolve/main/best.pt",
         device: Optional[str] = None,
         conf: float = 0.30,
-        iou: float = 0.45,  # IoU threshold for NMS (lower = more aggressive deduplication)
-        min_box_area: int = 400,  # Minimum bounding box area (width * height)
-        max_box_ratio: float = 10.0,  # Max aspect ratio (width/height or height/width)
+        iou: float = 0.45,  
+        min_box_area: int = 400,  
+        max_box_ratio: float = 10.0,
     ):
         self.device = _select_device(device)
         self.model = YOLO(model_path)
@@ -76,12 +76,11 @@ class YOLOModel:
         """
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         
-        # Run inference with NMS settings
         results = self.model(
             img, 
             verbose=False, 
             conf=self.conf, 
-            iou=self.iou,  # Use custom IoU threshold for NMS
+            iou=self.iou, 
             device=self.device
         )[0]
         
