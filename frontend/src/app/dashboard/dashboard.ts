@@ -3,6 +3,8 @@ import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { StreamService } from '../services/stream.service';
 import { Colorpicker } from '../colorpicker/colorpicker';
+import { Subscription } from 'rxjs';
+import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 
 interface Camera {
   name: string;
@@ -18,6 +20,13 @@ interface Event {
   alertLevel: 'high' | 'warning' | 'info';
 }
 
+interface Detection {
+  class: string;
+  confidence: number;
+  bbox: number[];
+  timestamp?: string;
+}
+
 @Component({
   selector: 'app-dashboard',
   imports: [CommonModule, Colorpicker],
@@ -25,7 +34,7 @@ interface Event {
   styleUrl: './dashboard.css'
 })
 
-export class Dashboard {
+export class Dashboard implements OnInit, OnDestroy {
   //dummy data...
   cameras: Camera[] = [
     { name: 'Main Entrance', location: 'Building A', id: 1, status: 'active' },
@@ -42,7 +51,17 @@ export class Dashboard {
   selectedCamera: Camera | undefined;
   public currentTime: Date = new Date();
 
-  constructor(private router: Router) 
+  // NEW: Video stream properties
+  currentFrame: SafeUrl | null = null;
+  currentDetections: Detection[] = [];
+  private frameSubscription?: Subscription;
+  isStreamActive: boolean = false;
+
+  constructor(
+    private router: Router,
+    private streamService: StreamService,
+    private sanitizer: DomSanitizer
+  ) 
   {
     setInterval(() => {
       this.currentTime = new Date();
@@ -66,12 +85,107 @@ export class Dashboard {
     if (this.cameras.length > 0) {
       this.selectCamera(this.cameras[0].id);
     }
+
+    // Subscribe to frame updates from WebSocket
+    this.frameSubscription = this.streamService.frame$.subscribe({
+      next: (data) => {
+        // Clean up old object URL to prevent memory leaks
+        if (this.currentFrame && typeof this.currentFrame === 'string') {
+          URL.revokeObjectURL(this.currentFrame);
+        }
+        
+        this.currentFrame = this.sanitizer.bypassSecurityTrustUrl(data.frame);
+        this.currentDetections = data.detections;
+      },
+      error: (err) => {
+        console.error('Error receiving frame:', err);
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    // Clean up subscriptions and WebSocket connection
+    if (this.frameSubscription) {
+      this.frameSubscription.unsubscribe();
+    }
+    
+    // Clean up object URL
+    if (this.currentFrame && typeof this.currentFrame === 'string') {
+      URL.revokeObjectURL(this.currentFrame);
+    }
+
+    // Disconnect WebSocket
+    this.streamService.disconnectWebSocket();
   }
 
   selectCamera(id: number): void {
     this.selectedCameraId = id;
     this.selectedCamera = this.cameras.find(c => c.id === id);
     console.log(`Camera selected: ${this.selectedCamera?.name}`);
+
+    // Disconnect from previous stream
+    this.streamService.disconnectWebSocket();
+    this.currentFrame = null;
+    this.currentDetections = [];
+
+    // Connect to new stream if camera is active
+    if (this.selectedCamera && this.selectedCamera.status === 'active') {
+      const streamId = this.selectedCamera.id.toString();
+      this.streamService.connectToStream(streamId);
+    }
+  }
+
+  /**
+   * Start streaming for the selected camera
+   */
+  startStreaming(): void {
+    if (!this.selectedCamera) {
+      console.error('No camera selected');
+      return;
+    }
+
+    const streamId = this.selectedCamera.id.toString();
+    
+    this.streamService.startStream(streamId).subscribe({
+      next: (response) => {
+        console.log('Stream started:', response);
+        this.isStreamActive = true;
+        this.selectedCamera!.status = 'active';
+        
+        // Connect to WebSocket to receive frames
+        this.streamService.connectToStream(streamId);
+      },
+      error: (err) => {
+        console.error('Failed to start stream:', err);
+        alert('Failed to start stream. Please try again.');
+      }
+    });
+  }
+
+  /**
+   * Stop streaming for the selected camera
+   */
+  stopStreaming(): void {
+    if (!this.selectedCamera) {
+      console.error('No camera selected');
+      return;
+    }
+
+    const streamId = this.selectedCamera.id.toString();
+    
+    this.streamService.stopStream(streamId).subscribe({
+      next: (response) => {
+        console.log('Stream stopped:', response);
+        this.isStreamActive = false;
+        this.selectedCamera!.status = 'offline';
+        this.currentFrame = null;
+        this.currentDetections = [];
+      },
+      error: (err) => {
+        console.error('Failed to stop stream:', err);
+        alert('Failed to stop stream. Please try again.');
+      }
+    });
   }
 
   //place holder...
@@ -98,5 +212,19 @@ export class Dashboard {
       default:
         return '';
     }
+  }
+
+  /**
+   * Get detection count for display
+   */
+  get detectionCount(): number {
+    return this.currentDetections.length;
+  }
+
+  /**
+   * Check if frame is available
+   */
+  get hasFrame(): boolean {
+    return this.currentFrame !== null;
   }
 }

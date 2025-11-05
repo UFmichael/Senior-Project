@@ -4,6 +4,7 @@ import time
 import asyncio
 from entities.yolo.model import YOLOModel
 import numpy as np
+from .websocket_manager import manager
 
 class StreamHandler:
     def __init__(self, stream_url: str, stream_id: str):
@@ -50,6 +51,8 @@ class StreamHandler:
                 
                 # Process frame with YOLO model
                 image_bytes = buffer.tobytes()
+                detections_list = []  # Store detections for WebSocket
+                
                 try:
                     results = await self.model.predict(image_bytes)
                     
@@ -59,6 +62,14 @@ class StreamHandler:
                                 timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
                                 print(f"ALERT [{self.stream_id} @ {timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
                                 
+                                # Store detection info for WebSocket clients
+                                detections_list.append({
+                                    "class": detection["class"],
+                                    "confidence": float(detection["confidence"]),
+                                    "bbox": detection.get("bbox", []),
+                                    "timestamp": timestamp
+                                })
+                                
                                 #TODO: Save detection details to a database, send notis to frontend, save the frame as an image file, etc.
 
                 
@@ -66,6 +77,40 @@ class StreamHandler:
                     print(f"[{self.stream_id}] Error processing frame: {e}")
                     import traceback
                     traceback.print_exc()
+                
+                # NEW: Send frame to WebSocket clients if any are connected
+                # This is non-blocking and won't affect original functionality
+                try:
+                    if manager.has_connections(self.stream_id):
+                        # Create annotated frame with bounding boxes for WebSocket clients
+                        annotated_frame = frame.copy()
+                        
+                        for detection in detections_list:
+                            if "bbox" in detection and detection["bbox"]:
+                                bbox = detection["bbox"]
+                                x1, y1, x2, y2 = map(int, bbox)
+                                
+                                # Draw rectangle
+                                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                
+                                # Add label
+                                label = f"{detection['class']}: {detection['confidence']:.2f}"
+                                cv2.putText(annotated_frame, label, (x1, y1 - 10),
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        # Encode annotated frame
+                        is_success, encoded_frame = cv2.imencode(".jpg", annotated_frame, 
+                                                                 [cv2.IMWRITE_JPEG_QUALITY, 80])
+                        if is_success:
+                            frame_bytes = encoded_frame.tobytes()
+                            await manager.send_frame(
+                                stream_id=self.stream_id,
+                                frame_data=frame_bytes,
+                                detections=detections_list
+                            )
+                except Exception as e:
+                    # Don't let WebSocket errors break the main processing loop
+                    print(f"[{self.stream_id}] Error sending frame to WebSocket (non-critical): {e}")
             
             capture.release()
             
