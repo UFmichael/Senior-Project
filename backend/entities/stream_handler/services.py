@@ -24,6 +24,10 @@ class StreamHandler:
         while not self._stop_event.is_set():
             capture = cv2.VideoCapture(self.stream_url)
             
+            # I'm trying to make the video not a slideshow
+            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            capture.set(cv2.CAP_PROP_FPS, 30)
+
             # If the connection fails, wait 5 seconds to try reconnecting
             if not capture.isOpened():
                 print(f"[{self.stream_id}] Error: Stream not available. Retrying in 5 seconds...")
