@@ -20,12 +20,18 @@ class StreamHandler:
     async def _process_stream(self):
         print(f"Handler for '{self.stream_id}' starting: trying to connect to {self.stream_url}")
         
+        # Frame skipping and timing control
+        frame_count = 0
+        detection_frame_interval = 5  # Process YOLO every 5th frame
+        display_frame_interval = 2    # Send to frontend every 2nd frame (15 FPS from 30 FPS source)
+        last_detections = []  # Cache last detection results
+        
         # This is the outer reconnection loop, keeps running as long as the stop event isn't set
         while not self._stop_event.is_set():
             capture = cv2.VideoCapture(self.stream_url)
             
-            # I'm trying to make the video not a slideshow
-            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # Optimize video capture settings
+            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
             capture.set(cv2.CAP_PROP_FPS, 30)
 
             # If the connection fails, wait 5 seconds to try reconnecting
@@ -35,10 +41,6 @@ class StreamHandler:
                 continue
 
             print(f"[{self.stream_id}] Handler connected to stream successfully!")
-
-            # Runs when stream is connected, reads one single frame from the video stream at a time
-            # Something we need to consider is if we want to read every single frame or skip frames
-            # TODO: Implement frame skipping logic if needed to reduce load
             
             while not self._stop_event.is_set():
                 was_successful, frame = capture.read()
@@ -48,48 +50,51 @@ class StreamHandler:
                     print(f"[{self.stream_id}] Stream lost. Attempting to reconnect...")
                     break
                 
-                is_success, buffer = cv2.imencode(".jpg", frame)
-                if not is_success:
-                    print(f"[{self.stream_id}] Failed to encode frame")
-                    continue
+                frame_count += 1
                 
-                # Process frame with YOLO model
-                image_bytes = buffer.tobytes()
-                detections_list = []  # Store detections for WebSocket
-                
-                try:
-                    results = await self.model.predict(image_bytes)
+                # Process frame with YOLO model only every Nth frame
+                if frame_count % detection_frame_interval == 0:
+                    try:
+                        # Resize frame for faster YOLO processing (optional - trade accuracy for speed)
+                        # Uncomment the next two lines if you want to process smaller frames
+                        # detection_frame = cv2.resize(frame, (640, 480))
+                        # is_success, buffer = cv2.imencode(".jpg", detection_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        
+                        is_success, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        if not is_success:
+                            continue
+                            
+                        image_bytes = buffer.tobytes()
+                        results = await self.model.predict(image_bytes)
+                        
+                        # Update cached detections
+                        last_detections = []
+                        if results["detections"]:
+                            for detection in results["detections"]:
+                                if detection["confidence"] > 0.65:  # Increased threshold for better accuracy
+                                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                                    print(f"ALERT [{self.stream_id} @ {timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
+                                    
+                                    last_detections.append({
+                                        "class": detection["class"],
+                                        "confidence": float(detection["confidence"]),
+                                        "bbox": detection.get("bbox", []),
+                                        "timestamp": timestamp
+                                    })
                     
-                    if results["detections"]:
-                        for detection in results["detections"]:
-                            if detection["confidence"] > 0.5:  # we should def change this here, confidence of 0.5 is egregiously low
-                                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                                print(f"ALERT [{self.stream_id} @ {timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
-                                
-                                # Store detection info for WebSocket clients
-                                detections_list.append({
-                                    "class": detection["class"],
-                                    "confidence": float(detection["confidence"]),
-                                    "bbox": detection.get("bbox", []),
-                                    "timestamp": timestamp
-                                })
-                                
-                                #TODO: Save detection details to a database, send notis to frontend, save the frame as an image file, etc.
-
+                    except Exception as e:
+                        print(f"[{self.stream_id}] Error processing frame: {e}")
+                        import traceback
+                        traceback.print_exc()
                 
-                except Exception as e:
-                    print(f"[{self.stream_id}] Error processing frame: {e}")
-                    import traceback
-                    traceback.print_exc()
-                
-                # NEW: Send frame to WebSocket clients if any are connected
-                # This is non-blocking and won't affect original functionality
-                try:
-                    if manager.has_connections(self.stream_id):
-                        # Create annotated frame with bounding boxes for WebSocket clients
+                # Send frame to WebSocket clients only every display_frame_interval frames
+                # and only if there are active connections
+                if frame_count % display_frame_interval == 0 and manager.has_connections(self.stream_id):
+                    try:
+                        # Create annotated frame with bounding boxes
                         annotated_frame = frame.copy()
                         
-                        for detection in detections_list:
+                        for detection in last_detections:
                             if "bbox" in detection and detection["bbox"]:
                                 bbox = detection["bbox"]
                                 x1, y1, x2, y2 = map(int, bbox)
@@ -102,19 +107,19 @@ class StreamHandler:
                                 cv2.putText(annotated_frame, label, (x1, y1 - 10),
                                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                         
-                        # Encode annotated frame
+                        # Encode with lower quality for faster transmission
                         is_success, encoded_frame = cv2.imencode(".jpg", annotated_frame, 
-                                                                 [cv2.IMWRITE_JPEG_QUALITY, 80])
+                                                                 [cv2.IMWRITE_JPEG_QUALITY, 60])
                         if is_success:
                             frame_bytes = encoded_frame.tobytes()
                             await manager.send_frame(
                                 stream_id=self.stream_id,
                                 frame_data=frame_bytes,
-                                detections=detections_list
+                                detections=last_detections
                             )
-                except Exception as e:
-                    # Don't let WebSocket errors break the main processing loop
-                    print(f"[{self.stream_id}] Error sending frame to WebSocket (non-critical): {e}")
+                    except Exception as e:
+                        # Don't let WebSocket errors break the main processing loop
+                        print(f"[{self.stream_id}] Error sending frame to WebSocket (non-critical): {e}")
             
             capture.release()
             
