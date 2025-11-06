@@ -2,7 +2,7 @@ import cv2
 import threading
 import time
 import asyncio
-from entities.yolo.model import YOLOModel
+from entities.yolo.model import YOLOWeaponModel
 import numpy as np
 
 class StreamHandler:
@@ -13,7 +13,7 @@ class StreamHandler:
         self._thread = None
         # A threading.Event object that acts as a safe flag to signal the thread when to stop
         self._stop_event = threading.Event()
-        self.model = YOLOModel()
+        self.model = YOLOWeaponModel()
 
     # This is the main function that runs continuously in the background thread
     async def _process_stream(self):

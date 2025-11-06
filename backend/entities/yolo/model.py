@@ -24,7 +24,7 @@ def _select_device(explicit: Optional[str] = None) -> str:
     return "cpu"
 
 
-class YOLOModel:
+class YOLOWeaponModel:
     """
     Simple weapon detection model.
     Returns detections classified as either 'weapon' or 'non-weapon'.
@@ -124,4 +124,90 @@ class YOLOModel:
             "detections": detections,
             "image_size": img.size,
             "filtered_count": filtered_count,
+        }
+    
+class YOLOPoseModel:
+    def __init__(
+            self, 
+            model_path = "yolov8n-pose.pt", 
+            device: Optional[str] = None, 
+            conf: float = 0.30,
+            iou: float = 0.45,
+        ):
+        self.device = _select_device(device)
+        self.model = YOLO(model_path)
+        self.conf = conf
+        self.iou = iou
+
+    
+   
+    async def predict(self, image_bytes: bytes) -> Dict[str, Any]:
+        """
+        Predict pose for people in an image.
+        
+        Returns:
+            {
+                "detections": [
+                    {
+                        "class": "person",
+                        "confidence": float,
+                        "bbox": [x1, y1, x2, y2],
+                        "keypoints": [
+                            {"point_name": str, "x": float, "y": float, "conf": float},
+                            ...
+                        ]
+                    }
+                ],
+                "image_size": (width, height),
+            }
+        """
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        
+        # Run inference
+        results = self.model(
+            img,
+            verbose=False,
+            conf=self.conf,
+            iou=self.iou,
+            device=self.device
+        )[0]
+        
+        detections = []
+        
+        # Get keypoint names (e.g., 'nose', 'left_eye', 'right_shoulder', etc.)
+        # This is a dictionary like {0: 'nose', 1: 'left_eye', ...}
+        keypoint_names = self.model.model.names
+
+        # Iterate over each detected person
+        for box, kpts in zip(results.boxes, results.keypoints):
+            # Bounding box
+            x1, y1, x2, y2 = [float(v) for v in box.xyxy[0]]
+            conf = float(box.conf[0])
+            
+            # Keypoints
+            keypoints_data = []
+            
+            # --- START FIX ---
+            # We use enumerate() to get the index 'i'.
+            # 'i' will be 0, 1, 2... which corresponds to the keys
+            # in the keypoint_names dictionary.
+            for i, ((x, y), kpt_conf) in enumerate(zip(kpts.xy[0], kpts.conf[0])):
+                keypoints_data.append({
+                    # Use the index 'i' to get the name
+                    "x": float(x),
+                    "y": float(y),
+                    "conf": float(kpt_conf)
+                })
+            # --- END FIX ---
+            
+            detections.append({
+                "class": "person",
+                "confidence": conf,
+                "bbox": [x1, y1, x2, y2],
+                "keypoints": keypoints_data
+            })
+            
+        return {
+            "detections": detections,
+            "image_size": img.size,
         }
