@@ -40,7 +40,7 @@ class YOLOModel:
     
     def __init__(
         self,
-        model_path: str = "https://huggingface.co/Subh775/Threat-Detection-YOLOv8n/resolve/main/best.pt",
+        model_path: str = "https://huggingface.co/Subh775/Threat-Detection-YOLOv8n/resolve/main/weights/best.pt",
         device: Optional[str] = None,
         conf: float = 0.30,
         iou: float = 0.45,  
