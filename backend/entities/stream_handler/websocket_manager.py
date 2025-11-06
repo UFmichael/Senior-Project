@@ -52,6 +52,8 @@ class ConnectionManager:
             "detections": detections or []
         }
 
+        print(f"[WebSocket] Sending frame to {len(self.active_connections[stream_id])} client(s) for stream {stream_id}")
+
         disconnected = set()
         for connection in list(self.active_connections[stream_id]):
             # Skip if connection is not ready (backpressure)

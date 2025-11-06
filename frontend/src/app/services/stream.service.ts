@@ -82,9 +82,6 @@ export class StreamService {
     console.log(`Connecting to WebSocket: ${wsPath}`);
     
     this.ws = new WebSocket(wsPath);
-    this.ws.binaryType = 'arraybuffer';
-
-    let pendingMetadata: FrameData | null = null;
 
     this.ws.onopen = () => {
       console.log('WebSocket connected');
@@ -93,25 +90,29 @@ export class StreamService {
     };
 
     this.ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        // This is the JSON metadata message
-        try {
-          pendingMetadata = JSON.parse(event.data);
-        } catch (e) {
-          console.error('Error parsing metadata:', e);
-        }
-      } else {
-        // This is the binary frame data
-        if (pendingMetadata) {
-          const blob = new Blob([event.data], { type: 'image/jpeg' });
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'frame' && data.frame) {
+          // Decode base64 frame data
+          const binaryString = atob(data.frame);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          const blob = new Blob([bytes], { type: 'image/jpeg' });
           const imageUrl = URL.createObjectURL(blob);
           
           this.frameSubject.next({
             frame: imageUrl,
-            detections: pendingMetadata.detections
+            detections: data.detections || []
           });
-          
-          pendingMetadata = null;
+        }
+      } catch (e) {
+        // Ignore non-JSON messages (like "pong" responses)
+        if (event.data !== 'pong') {
+          console.error('Error processing message:', e);
         }
       }
     };

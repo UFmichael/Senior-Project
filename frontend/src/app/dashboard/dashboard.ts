@@ -53,6 +53,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // NEW: Video stream properties
   currentFrame: SafeUrl | null = null;
+  private previousFrameUrl: string | null = null; // Track for cleanup
   currentDetections: Detection[] = [];
   private frameSubscription?: Subscription;
   isStreamActive: boolean = false;
@@ -90,10 +91,12 @@ export class Dashboard implements OnInit, OnDestroy {
     this.frameSubscription = this.streamService.frame$.subscribe({
       next: (data) => {
         // Clean up old object URL to prevent memory leaks
-        if (this.currentFrame && typeof this.currentFrame === 'string') {
-          URL.revokeObjectURL(this.currentFrame);
+        if (this.previousFrameUrl) {
+          URL.revokeObjectURL(this.previousFrameUrl);
         }
         
+        // Store the new URL for future cleanup
+        this.previousFrameUrl = data.frame;
         this.currentFrame = this.sanitizer.bypassSecurityTrustUrl(data.frame);
         this.currentDetections = data.detections;
       },
@@ -110,8 +113,8 @@ export class Dashboard implements OnInit, OnDestroy {
     }
     
     // Clean up object URL
-    if (this.currentFrame && typeof this.currentFrame === 'string') {
-      URL.revokeObjectURL(this.currentFrame);
+    if (this.previousFrameUrl) {
+      URL.revokeObjectURL(this.previousFrameUrl);
     }
 
     // Disconnect WebSocket
@@ -125,6 +128,13 @@ export class Dashboard implements OnInit, OnDestroy {
 
     // Disconnect from previous stream
     this.streamService.disconnectWebSocket();
+    
+    // Clean up old frame URL
+    if (this.previousFrameUrl) {
+      URL.revokeObjectURL(this.previousFrameUrl);
+      this.previousFrameUrl = null;
+    }
+    
     this.currentFrame = null;
     this.currentDetections = [];
 
@@ -178,6 +188,13 @@ export class Dashboard implements OnInit, OnDestroy {
         console.log('Stream stopped:', response);
         this.isStreamActive = false;
         this.selectedCamera!.status = 'offline';
+        
+        // Clean up frame URL
+        if (this.previousFrameUrl) {
+          URL.revokeObjectURL(this.previousFrameUrl);
+          this.previousFrameUrl = null;
+        }
+        
         this.currentFrame = null;
         this.currentDetections = [];
       },
