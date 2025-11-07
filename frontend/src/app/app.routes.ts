@@ -4,7 +4,7 @@ import { Login } from './login/login'
 import { Signup } from './signup/signup'
 import { Dashboard } from './dashboard/dashboard';
 import { Alertlog } from './alertlog/alertlog'
-import { Video } from './video/video'
+import { Analytic } from './analytic/analytic'
 
 export const routes: Routes = [
     {path: '', redirectTo: '/login', pathMatch: 'full'},
@@ -12,7 +12,7 @@ export const routes: Routes = [
     {path: 'signup', component: Signup},
     {path: 'dashboard', component: Dashboard},
     {path: 'alertlog', component: Alertlog},
-    {path: 'video', component: Video}
+    {path: 'analytic', component: Analytic}
 ];
 
 @NgModule({

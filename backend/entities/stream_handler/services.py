@@ -4,11 +4,13 @@ import time
 import asyncio
 from entities.yolo.model import YOLOModel
 import numpy as np
+from .websocket_manager import manager
 
 class StreamHandler:
-    def __init__(self, stream_url: str):
+    def __init__(self, stream_url: str, stream_id: str):
         # Stores the RTMP stream URL that this handler will connect to
         self.stream_url = stream_url
+        self.stream_id = stream_id
         self._thread = None
         # A threading.Event object that acts as a safe flag to signal the thread when to stop
         self._stop_event = threading.Event()
@@ -16,59 +18,112 @@ class StreamHandler:
 
     # This is the main function that runs continuously in the background thread
     async def _process_stream(self):
-        print(f"Handler starting: trying to connect to {self.stream_url}")
+        print(f"Handler for '{self.stream_id}' starting: trying to connect to {self.stream_url}")
+        
+        # Frame skipping and timing control
+        frame_count = 0
+        detection_frame_interval = 5  # Process YOLO every 5th frame
+        display_frame_interval = 2    # Send to frontend every 2nd frame (15 FPS from 30 FPS source)
+        last_detections = []  # Cache last detection results
         
         # This is the outer reconnection loop, keeps running as long as the stop event isn't set
         while not self._stop_event.is_set():
             capture = cv2.VideoCapture(self.stream_url)
             
+            # Optimize video capture settings
+            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
+            capture.set(cv2.CAP_PROP_FPS, 30)
+
             # If the connection fails, wait 5 seconds to try reconnecting
             if not capture.isOpened():
-                print("Error: Stream not available. Retrying in 5 seconds...")
+                print(f"[{self.stream_id}] Error: Stream not available. Retrying in 5 seconds...")
                 time.sleep(5)
                 continue
 
-            print("Handler connected to stream successfully!")
-
-            # Runs when stream is connected, reads one single frame from the video stream at a time
-            # Something we need to consider is if we want to read every single frame or skip frames
-            # TODO: Implement frame skipping logic if needed to reduce load
+            print(f"[{self.stream_id}] Handler connected to stream successfully!")
             
             while not self._stop_event.is_set():
                 was_successful, frame = capture.read()
                 
                 # Runs if the stream has been lost or has ended.
                 if not was_successful:
-                    print("Stream lost. Attempting to reconnect...")
+                    print(f"[{self.stream_id}] Stream lost. Attempting to reconnect...")
                     break
                 
-                is_success, buffer = cv2.imencode(".jpg", frame)
-                if not is_success:
-                    print("Failed to encode frame")
-                    continue
+                frame_count += 1
                 
-                # Process frame with YOLO model
-                image_bytes = buffer.tobytes()
-                try:
-                    results = await self.model.predict(image_bytes)
+                # Process frame with YOLO model only every Nth frame
+                if frame_count % detection_frame_interval == 0:
+                    try:
+                        # Resize frame for faster YOLO processing (optional - trade accuracy for speed)
+                        # Uncomment the next two lines if you want to process smaller frames
+                        # detection_frame = cv2.resize(frame, (640, 480))
+                        # is_success, buffer = cv2.imencode(".jpg", detection_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        
+                        is_success, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        if not is_success:
+                            continue
+                            
+                        image_bytes = buffer.tobytes()
+                        results = await self.model.predict(image_bytes)
+                        
+                        # Update cached detections
+                        last_detections = []
+                        if results["detections"]:
+                            for detection in results["detections"]:
+                                if detection["confidence"] > 0.65:  # Increased threshold for better accuracy
+                                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                                    print(f"ALERT [{self.stream_id} @ {timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
+                                    
+                                    last_detections.append({
+                                        "class": detection["class"],
+                                        "confidence": float(detection["confidence"]),
+                                        "bbox": detection.get("bbox", []),
+                                        "timestamp": timestamp
+                                    })
                     
-                    if results["detections"]:
-                        for detection in results["detections"]:
-                            if detection["confidence"] > 0.5:  # we should def change this here, confidence of 0.5 is egregiously low
-                                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                                print(f"ALERT [{timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
-                                
-                                #TODO: Save detection details to a database, send notis to frontend, save the frame as an image file, etc.
-
+                    except Exception as e:
+                        print(f"[{self.stream_id}] Error processing frame: {e}")
+                        import traceback
+                        traceback.print_exc()
                 
-                except Exception as e:
-                    print(f"Error processing frame: {e}")
-                    import traceback
-                    traceback.print_exc()
+                # Send frame to WebSocket clients only every display_frame_interval frames
+                # and only if there are active connections
+                if frame_count % display_frame_interval == 0 and manager.has_connections(self.stream_id):
+                    try:
+                        # Create annotated frame with bounding boxes
+                        annotated_frame = frame.copy()
+                        
+                        for detection in last_detections:
+                            if "bbox" in detection and detection["bbox"]:
+                                bbox = detection["bbox"]
+                                x1, y1, x2, y2 = map(int, bbox)
+                                
+                                # Draw rectangle
+                                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                
+                                # Add label
+                                label = f"{detection['class']}: {detection['confidence']:.2f}"
+                                cv2.putText(annotated_frame, label, (x1, y1 - 10),
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        # Encode with lower quality for faster transmission
+                        is_success, encoded_frame = cv2.imencode(".jpg", annotated_frame, 
+                                                                 [cv2.IMWRITE_JPEG_QUALITY, 60])
+                        if is_success:
+                            frame_bytes = encoded_frame.tobytes()
+                            await manager.send_frame(
+                                stream_id=self.stream_id,
+                                frame_data=frame_bytes,
+                                detections=last_detections
+                            )
+                    except Exception as e:
+                        # Don't let WebSocket errors break the main processing loop
+                        print(f"[{self.stream_id}] Error sending frame to WebSocket (non-critical): {e}")
             
             capture.release()
             
-        print("Stream handler has been stopped.")
+        print(f"Handler for '{self.stream_id}' has been stopped.")
 
     def start(self) -> bool:
         # Check if the handler is already running to prevent starting multiple threads
@@ -91,7 +146,7 @@ class StreamHandler:
         self._thread = threading.Thread(target=thread_target, daemon=True)
         self._thread.start()
 
-        print("Stream handler started.")
+        print(f"Stream handler for '{self.stream_id}' started.")
         return True
 
     def stop(self) -> bool:
@@ -109,12 +164,34 @@ class StreamHandler:
             print("Error: Handler thread did not stop in time.")
             return False
         
-        print("Stream handler stopped successfully.")
+        print(f"Stream handler for '{self.stream_id}' stopped successfully.")
         return True
 
     # A helper method to check if the thread is active
     def is_running(self) -> bool:
         return self._thread and self._thread.is_alive()
 
-# For now, we only use one stream but that will change in the future.
-main_stream_handler = StreamHandler(stream_url="rtmp://127.0.0.1:1935/live/mystream")
+stream_handlers = {}
+_lock = threading.Lock()
+
+def start_stream_processing(stream_id: str):
+    with _lock:
+        if stream_id in stream_handlers and stream_handlers[stream_id].is_running():
+            return False
+
+        stream_url = f"rtmp://127.0.0.1:1935/live/{stream_id}"
+        handler = StreamHandler(stream_url=stream_url, stream_id=stream_id)
+        stream_handlers[stream_id] = handler
+        
+        return handler.start()
+
+def stop_stream_processing(stream_id: str):
+    with _lock:
+        if stream_id not in stream_handlers or not stream_handlers[stream_id].is_running():
+            return False
+        
+        success = stream_handlers[stream_id].stop()
+        if success:
+            del stream_handlers[stream_id]
+        
+        return success
