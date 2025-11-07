@@ -2,32 +2,33 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background-color: #D7D7D7;
+    background-color: var(--background-color);
     font-family: Arial, sans-serif;
 }
 
 .page-header {
-    background-color: #F4F4F4;
+    background-color: var(--carddisplay);
     padding: 40px 30px;
     font-size: 2.4em;
     font-weight: bold;
-    color: #333;
+    color: var(--text-color);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     display: flex;
     align-items: center;
     gap: 1em;
     height: 0.7em; 
+    justify-content: space-between;
 }
 
 .back {
     background: none;
     border: none;
     cursor: pointer;
-    color: black;
+    color: var(--text-color);
 }
 
 .back mat-icon {
-    font-size: 2.3em; 
+    font-size: 2.2em; 
 }
 
 .alert-content {

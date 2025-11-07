@@ -1,0 +1,10 @@
+select {
+    /* Your initial style */
+    padding: 8px;
+    border-radius: 4px;
+    border: 2px solid var(--border);
+
+    /* Apply the theme variables! */
+    background-color: var(--carddisplay); /* Or another surface color */
+    color: var(--text-color);
+}

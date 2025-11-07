@@ -1,13 +1,14 @@
 import { Component } from '@angular/core';
 import { RouterLink, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { Colorpicker } from '../colorpicker/colorpicker';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
 import { environment } from '../../environments/environment';
 
 @Component({
   selector: 'app-signup',
-  imports: [RouterLink, FormsModule, CommonModule],
+  imports: [RouterLink, FormsModule, Colorpicker, CommonModule],
   templateUrl: './signup.html',
   styleUrl: './signup.css'
 })

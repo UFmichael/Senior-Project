@@ -1,18 +1,18 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { Video } from './video';
+import { Colorpicker } from './colorpicker';
 
-describe('Video', () => {
-  let component: Video;
-  let fixture: ComponentFixture<Video>;
+describe('Colorpicker', () => {
+  let component: Colorpicker;
+  let fixture: ComponentFixture<Colorpicker>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Video]
+      imports: [Colorpicker]
     })
     .compileComponents();
 
-    fixture = TestBed.createComponent(Video);
+    fixture = TestBed.createComponent(Colorpicker);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

@@ -1,6 +1,57 @@
 body, html {
     margin: 0;
-    background-color: #D7D7D7;
+    background-color: var(--background);
 }
+html, body { height: 100%; }
+body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
+
+body.blue-mode {
+    --text-color: #c3c7ca;
+    --background: #0F172A;
+    --carddisplay: #1E293B;
+    --button: #0F172A;
+    --buttin-hover: #0c1220;
+    --button-txt: #a0a5cc;
+    --inputbox: #4e6275;
+    --signup: #4e7c88;
+    --border: #334155;
+    --actived: #4a6896;
+    --active-hover: #6183b4;
+    --actived-txt: #ffffff;
+    --metric-txt: #aaaaaa;
+}
+
+body.dark-mode {
+    --text-color: #FFF;
+    --background: #1b1c1d;
+    --carddisplay: #333537;
+    --button: #616366d8;
+    --buttin-hover: #737577d8;
+    --button-txt: #d3d3d3;
+    --inputbox: #707070;
+    --signup: #c3c7ca;
+    --border: #969696;
+    --actived: #696969;
+    --active-hover: #8f8f8f;
+    --actived-txt: #ffffff;
+    --metric-txt: #aaaaaa;
+}
+
+body.light-mode {
+    --text-color: #333;
+    --background: #D7D7D7;
+    --carddisplay: #F4F4F4;
+    --button: #5D94E6;
+    --buttin-hover: #4d79ff;
+    --button-txt: #F4F4F4;
+    --inputbox: #FFF;
+    --signup: #6699ff;
+    --border: #ccc;
+    --actived: #abc7f1;
+    --active-hover: #ccdaee;
+    --actived-txt: #272727;
+    --metric-txt: #202020;
+}
+
 html, body { height: 100%; }
 body { margin: 0; font-family: Roboto, "Helvetica Neue", sans-serif; }
