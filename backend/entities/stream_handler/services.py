@@ -2,7 +2,7 @@ import cv2
 import threading
 import time
 import asyncio
-from entities.yolo.model import YOLOModel
+from .combined_model import CombinedDetectionModel
 import numpy as np
 from .websocket_manager import manager
 
@@ -14,7 +14,11 @@ class StreamHandler:
         self._thread = None
         # A threading.Event object that acts as a safe flag to signal the thread when to stop
         self._stop_event = threading.Event()
-        self.model = YOLOModel()
+        self.model = CombinedDetectionModel()
+        
+        # Alert throttling - prevent spamming console with alerts
+        self.last_alert_time = 0
+        self.alert_cooldown = 3  # seconds between alerts
 
     # This is the main function that runs continuously in the background thread
     async def _process_stream(self):
@@ -58,14 +62,9 @@ class StreamHandler:
                 
                 frame_count += 1
                 
-                # Process frame with YOLO model only every Nth frame
+                # Process frame with combined model only every Nth frame
                 if frame_count % detection_frame_interval == 0:
                     try:
-                        # Resize frame for faster YOLO processing (optional - trade accuracy for speed)
-                        # Uncomment the next two lines if you want to process smaller frames
-                        # detection_frame = cv2.resize(frame, (640, 480))
-                        # is_success, buffer = cv2.imencode(".jpg", detection_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                        
                         is_success, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                         if not is_success:
                             continue
@@ -73,20 +72,56 @@ class StreamHandler:
                         image_bytes = buffer.tobytes()
                         results = await self.model.predict(image_bytes)
                         
-                        # Update cached detections
+                        # Update cached detections - combine weapons and faces
                         last_detections = []
-                        if results["detections"]:
-                            for detection in results["detections"]:
-                                if detection["confidence"] > 0.65:  # Increased threshold for better accuracy
-                                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                                    print(f"ALERT [{self.stream_id} @ {timestamp}]: Detected {detection['class']} with confidence {detection['confidence']:.2f}")
-                                    
-                                    last_detections.append({
-                                        "class": detection["class"],
-                                        "confidence": float(detection["confidence"]),
-                                        "bbox": detection.get("bbox", []),
-                                        "timestamp": timestamp
-                                    })
+                        current_time = time.time()
+                        should_print_alert = (current_time - self.last_alert_time) >= self.alert_cooldown
+                        
+                        # Process weapon detections
+                        weapon_detections = results.get("weapon_detections", [])
+                        for detection in weapon_detections:
+                            if detection["confidence"] > 0.65:
+                                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                                
+                                # Only print alert if cooldown period has passed
+                                if should_print_alert:
+                                    print(f"🔴 WEAPON ALERT [{self.stream_id} @ {timestamp}]: "
+                                          f"Detected {detection.get('original_class', 'weapon')} "
+                                          f"with confidence {detection['confidence']:.2f}")
+                                
+                                last_detections.append({
+                                    "type": "weapon",
+                                    "class": detection.get("original_class", "weapon"),
+                                    "confidence": float(detection["confidence"]),
+                                    "bbox": detection.get("bbox", []),
+                                    "timestamp": timestamp
+                                })
+                        
+                        # Process face detections with emotions
+                        face_detections = results.get("face_detections", [])
+                        for face in face_detections:
+                            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                            emotion = face.get("dominant_emotion", "unknown")
+                            
+                            # Only print alert if cooldown period has passed
+                            if should_print_alert:
+                                emotion_scores = face.get("emotion_scores", {})
+                                emotion_conf = emotion_scores.get(emotion, 0) if emotion_scores else 0
+                                print(f"FACE DETECTED [{self.stream_id} @ {timestamp}]: "
+                                      f"Emotion: {emotion} ({emotion_conf:.0f}%)")
+                            
+                            last_detections.append({
+                                "type": "face",
+                                "emotion": emotion,
+                                "emotion_scores": face.get("emotion_scores", {}),
+                                "confidence": float(face.get("confidence", 0.0)),
+                                "bbox": face.get("bbox", []),
+                                "timestamp": timestamp
+                            })
+                        
+                        # Update last alert time if we printed anything
+                        if should_print_alert and (weapon_detections or face_detections):
+                            self.last_alert_time = current_time
                     
                     except Exception as e:
                         print(f"[{self.stream_id}] Error processing frame: {e}")
@@ -121,13 +156,35 @@ class StreamHandler:
                                 bbox = detection["bbox"]
                                 x1, y1, x2, y2 = map(int, bbox)
                                 
-                                # Draw rectangle
-                                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                detection_type = detection.get("type", "unknown")
                                 
-                                # Add label
-                                label = f"{detection['class']}: {detection['confidence']:.2f}"
-                                cv2.putText(annotated_frame, label, (x1, y1 - 10),
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                                if detection_type == "weapon":
+                                    # RED for weapons
+                                    color = (0, 0, 255)
+                                    label = f"{detection.get('class', 'weapon')}: {detection['confidence']:.2f}"
+                                elif detection_type == "face":
+                                    # BLUE for faces with emotion
+                                    color = (255, 0, 0)
+                                    emotion = detection.get('emotion', 'unknown')
+                                    label = f"{emotion}"
+                                else:
+                                    # GREEN for other detections
+                                    color = (0, 255, 0)
+                                    label = f"{detection.get('class', 'unknown')}: {detection['confidence']:.2f}"
+                                
+                                # Draw rectangle
+                                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                                
+                                # Add label background for better visibility
+                                label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+                                cv2.rectangle(annotated_frame, 
+                                            (x1, y1 - label_size[1] - 10), 
+                                            (x1 + label_size[0], y1), 
+                                            color, -1)
+                                
+                                # Add label text
+                                cv2.putText(annotated_frame, label, (x1, y1 - 5),
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
                         
                         # Encode with lower quality for faster transmission
                         is_success, encoded_frame = cv2.imencode(".jpg", annotated_frame, 
