@@ -19,7 +19,7 @@ class ConnectionManager:
         self._max_queue_size = 3  # Drop old frames if queue exceeds this
         
         self._send_times: Dict[WebSocket, float] = {}
-        self._slow_connection_threshold = 0.1 
+        self._slow_connection_threshold = 0.2  # Increased from 0.1 to 0.2 (200ms tolerance)
         
         # Connection health tracking
         self._last_ping_time: Dict[WebSocket, float] = {}

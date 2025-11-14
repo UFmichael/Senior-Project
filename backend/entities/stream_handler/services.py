@@ -26,16 +26,16 @@ class StreamHandler:
         
         # Frame skipping and timing control with adaptive frame rate
         frame_count = 0
-        detection_frame_interval = 10  # Process detection every 10th frame (was 5) - OPTIMIZED
-        face_detection_interval = 30   # Process face detection every 30th frame (slower than weapons)
+        detection_frame_interval = 15  # Process weapon detection every 15th frame - MORE OPTIMIZED
+        face_detection_interval = 60   # Process face detection every 60th frame (once per 2 seconds)
         display_frame_interval = 2     # Send to frontend (starts at ~15 FPS from 30 FPS source)
         last_detections = []  # Cache last detection results
         
-        # Adaptive frame rate parameters
-        min_display_interval = 1  # Max 30 FPS
-        max_display_interval = 6  # Min 5 FPS
+        # Adaptive frame rate parameters - LESS AGGRESSIVE
+        min_display_interval = 2  # Start higher (max 15 FPS instead of 30)
+        max_display_interval = 4  # Lower max (min 7.5 FPS instead of 5)
         last_adaptation_time = time.time()
-        adaptation_interval = 3  # Adjust every 3 seconds
+        adaptation_interval = 5  # Adjust every 5 seconds (was 3) - less frequent changes
         
         # This is the outer reconnection loop, keeps running as long as the stop event isn't set
         while not self._stop_event.is_set():
@@ -151,12 +151,13 @@ class StreamHandler:
                 if current_time - last_adaptation_time >= adaptation_interval:
                     slow_ratio = manager.get_slow_client_ratio(self.stream_id)
                     
-                    if slow_ratio > 0.5:  # More than 50% of clients are slow
+                    # More conservative thresholds to prevent frame rate oscillation
+                    if slow_ratio > 0.7:  # More than 70% of clients are slow (was 50%)
                         # Decrease frame rate (increase interval)
                         display_frame_interval = min(display_frame_interval + 1, max_display_interval)
                         print(f"[{self.stream_id}] Decreased frame rate due to slow clients ({slow_ratio:.1%}). New interval: {display_frame_interval}")
-                    elif slow_ratio < 0.2 and display_frame_interval > min_display_interval:
-                        # Increase frame rate (decrease interval) if clients are keeping up
+                    elif slow_ratio < 0.1 and display_frame_interval > min_display_interval:
+                        # Increase frame rate (decrease interval) only if clients are very fast (was 20%)
                         display_frame_interval = max(display_frame_interval - 1, min_display_interval)
                         print(f"[{self.stream_id}] Increased frame rate. New interval: {display_frame_interval}")
                     
