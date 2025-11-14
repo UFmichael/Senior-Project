@@ -14,13 +14,12 @@ class ConnectionManager:
         self.active_connections: Dict[str, Set[WebSocket]] = {}
         self._lock = asyncio.Lock()
         
-        # Frame queue management - limit queue size per connection
+        # Frame queue management
         self._frame_queues: Dict[WebSocket, Deque] = {}
         self._max_queue_size = 3  # Drop old frames if queue exceeds this
         
-        # Backpressure tracking - measure send latency per connection
         self._send_times: Dict[WebSocket, float] = {}
-        self._slow_connection_threshold = 0.1  # 100ms send time = slow
+        self._slow_connection_threshold = 0.1 
         
         # Connection health tracking
         self._last_ping_time: Dict[WebSocket, float] = {}

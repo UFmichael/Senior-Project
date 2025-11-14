@@ -20,11 +20,17 @@ class StreamHandler:
     async def _process_stream(self):
         print(f"Handler for '{self.stream_id}' starting: trying to connect to {self.stream_url}")
         
-        # Frame skipping and timing control
+        # Frame skipping and timing control with adaptive frame rate
         frame_count = 0
         detection_frame_interval = 5  # Process YOLO every 5th frame
-        display_frame_interval = 2    # Send to frontend every 2nd frame (15 FPS from 30 FPS source)
+        display_frame_interval = 2    # Send to frontend (starts at ~15 FPS from 30 FPS source)
         last_detections = []  # Cache last detection results
+        
+        # Adaptive frame rate parameters
+        min_display_interval = 1  # Max 30 FPS
+        max_display_interval = 6  # Min 5 FPS
+        last_adaptation_time = time.time()
+        adaptation_interval = 3  # Adjust every 3 seconds
         
         # This is the outer reconnection loop, keeps running as long as the stop event isn't set
         while not self._stop_event.is_set():
@@ -87,6 +93,22 @@ class StreamHandler:
                         import traceback
                         traceback.print_exc()
                 
+                # Adaptive frame rate adjustment based on client performance
+                current_time = time.time()
+                if current_time - last_adaptation_time >= adaptation_interval:
+                    slow_ratio = manager.get_slow_client_ratio(self.stream_id)
+                    
+                    if slow_ratio > 0.5:  # More than 50% of clients are slow
+                        # Decrease frame rate (increase interval)
+                        display_frame_interval = min(display_frame_interval + 1, max_display_interval)
+                        print(f"[{self.stream_id}] Decreased frame rate due to slow clients ({slow_ratio:.1%}). New interval: {display_frame_interval}")
+                    elif slow_ratio < 0.2 and display_frame_interval > min_display_interval:
+                        # Increase frame rate (decrease interval) if clients are keeping up
+                        display_frame_interval = max(display_frame_interval - 1, min_display_interval)
+                        print(f"[{self.stream_id}] Increased frame rate. New interval: {display_frame_interval}")
+                    
+                    last_adaptation_time = current_time
+                
                 # Send frame to WebSocket clients only every display_frame_interval frames
                 # and only if there are active connections
                 if frame_count % display_frame_interval == 0 and manager.has_connections(self.stream_id):
@@ -120,6 +142,10 @@ class StreamHandler:
                     except Exception as e:
                         # Don't let WebSocket errors break the main processing loop
                         print(f"[{self.stream_id}] Error sending frame to WebSocket (non-critical): {e}")
+                
+                # Periodically send pings to keep connections alive
+                if frame_count % 300 == 0:  # Every ~10 seconds at 30 FPS
+                    await manager.send_ping(self.stream_id)
             
             capture.release()
             

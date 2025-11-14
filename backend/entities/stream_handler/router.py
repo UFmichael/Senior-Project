@@ -28,16 +28,32 @@ async def websocket_endpoint(websocket: WebSocket, stream_id: str):
     """
     WebSocket endpoint for receiving processed frames from a specific stream.
     Clients connect to this endpoint to receive real-time frame updates.
+    Uses binary frames for efficiency and includes heartbeat mechanism.
     """
     await manager.connect(websocket, stream_id)
     try:
-        # Keep the connection alive and listen for client messages (like ping/pong)
+        # Keep the connection alive and listen for client messages
         while True:
-            # Wait for any message from client (can be used for heartbeat)
+            # Wait for any message from client (heartbeat or control messages)
             data = await websocket.receive_text()
-            # Echo back to confirm connection is alive
-            if data == "ping":
-                await websocket.send_text("pong")
+            
+            try:
+                import json
+                message = json.loads(data)
+                
+                # Handle different message types
+                if message.get("type") == "ping":
+                    # Respond to ping to confirm connection is alive
+                    await websocket.send_json({"type": "pong", "timestamp": message.get("timestamp")})
+                elif message.get("type") == "pong":
+                    # Client acknowledged our ping
+                    pass
+                    
+            except json.JSONDecodeError:
+                # Legacy support for simple text messages
+                if data == "ping":
+                    await websocket.send_text("pong")
+                    
     except WebSocketDisconnect:
         await manager.disconnect(websocket, stream_id)
     except Exception as e:
