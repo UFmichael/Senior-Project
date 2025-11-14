@@ -5,7 +5,6 @@
         </div>
         <app-colorpicker></app-colorpicker>
     </header>
-
     <div class="main-content">
         <aside class="sidebar">
             <h3 class="sidebar-heading">CAMERA LIST</h3>
@@ -18,7 +17,6 @@
                     <span class="status-dot" [ngClass]="getCameraStatusClass(camera.status)"></span>
                 </a>
             </nav>
-
             <h3 class="sidebar-heading recent-events-heading">RECENT EVENTS</h3>
             <div class="recent-events-list">
                 <div class="event-item" 
@@ -33,31 +31,38 @@
                     <span class="event-time">{{ event.time }}</span>
                 </div>
             </div>
-
             <div class="bottom-sidebar-buttons">
                 <button class="nav-button analytics-button" (click)="goToAnalytics()">SHOW ANALYTICS</button>
                 <button class="nav-button alert-log-button" (click)="goToAlertLog()">VIEW ALERT LOGS</button>
             </div>
         </aside>
-
         <div class="video-feed-container">
             <div class="video-feed-header">
                 <h2 class="feed-title">{{ selectedCamera?.name || 'Select a Camera' }}</h2>
                 <p class="feed-subtitle">{{ selectedCamera?.location || 'N/A' }} - Camera {{ selectedCamera?.id || '--' }}</p>
-                <button class="control-btn">Fullscreen</button>
+                <div class="stream-controls">
+                    <button class="control-btn" (click)="startStreaming()" [disabled]="isStreamActive || !selectedCamera">▶ Start Stream</button>
+                    <button class="control-btn" (click)="stopStreaming()" [disabled]="!isStreamActive || !selectedCamera">⏹ Stop Stream</button>
+                    <button class="control-btn">Fullscreen</button>
+                </div>
             </div>
-
             <div class="video-placeholder">
+                <img *ngIf="hasFrame" [src]="currentFrame" alt="Live Feed" style="width: 100%; height: 100%; object-fit: contain;" />
+                <div *ngIf="!hasFrame" style="display: flex; align-items: center; justify-content: center; height: 100%; color: #888;">
+                    <span>{{ selectedCamera?.status === 'active' ? 'Connecting to stream...' : 'No video feed available' }}</span>
+                </div>
                 <span class="live-indicator" [ngClass]="currentLiveStatusClass">
                     {{ currentLiveStatusText }}
                 </span>
+                <div *ngIf="detectionCount > 0" style="position: absolute; top: 10px; right: 10px; background: rgba(239, 68, 68, 0.9); color: white; padding: 8px 16px; border-radius: 20px; font-weight: 600;">
+                    🎯 {{ detectionCount }} Detection(s)
+                </div>
                 <span class="timestamp">{{ currentTime | date:'HH:mm:ss' }}</span>
             </div>
-
             <div class="bottom-metrics-bar">
                 <div class="metric-card">
                     <p class="metric-label">People Count</p>
-                    <p class="metric-value">12</p>
+                    <p class="metric-value">{{ detectionCount }}</p>
                     <p class="metric-subtext">in current view</p>
                 </div>
                 <div class="metric-card">
@@ -67,11 +72,18 @@
                 </div>
                 <div class="metric-card recording-status">
                     <p class="metric-label">Recording</p>
-                    <p class="metric-value status-active">Active</p>
+                    <p class="metric-value status-active">{{ isStreamActive ? 'Active' : 'Inactive' }}</p>
                     <p class="metric-subtext">24/7 storage</p>
                 </div>
             </div>
-
+            <div *ngIf="currentDetections.length > 0" style="margin-top: 20px; padding: 15px; background: #1a1a1a; border-radius: 8px;">
+                <h3 style="margin: 0 0 15px 0; color: #ffffff; font-size: 1.1rem;">Current Detections</h3>
+                <div *ngFor="let detection of currentDetections" style="display: flex; justify-content: space-between; padding: 10px; background: #111827; border-radius: 6px; margin-bottom: 8px;">
+                    <span style="color: #60a5fa; font-weight: 600;">{{ detection.class }}</span>
+                    <span style="color: #22c55e; font-weight: 600;">{{ (detection.confidence * 100).toFixed(1) }}%</span>
+                    <span *ngIf="detection.timestamp" style="color: #9ca3af; font-size: 0.85rem;">{{ detection.timestamp }}</span>
+                </div>
+            </div>
         </div>
     </div>
 </div>
