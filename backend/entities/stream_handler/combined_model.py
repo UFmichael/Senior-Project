@@ -24,12 +24,13 @@ class CombinedDetectionModel:
         )
         print("Combined Detection Model initialized (Weapon + Face Emotion)")
     
-    async def predict(self, image_bytes: bytes) -> Dict[str, Any]:
+    async def predict(self, image_bytes: bytes, detect_faces: bool = True) -> Dict[str, Any]:
         """
-        Run both weapon detection and facial emotion detection concurrently.
+        Run weapon detection and optionally facial emotion detection.
         
         Args:
             image_bytes: JPEG image as bytes
+            detect_faces: If False, skip face detection for better performance
             
         Returns:
             {
@@ -41,12 +42,18 @@ class CombinedDetectionModel:
             }
         """
         try:
-            # Run both models concurrently for better performance
-            weapon_results, face_results = await asyncio.gather(
-                self.weapon_model.predict(image_bytes),
-                self.face_model.predict(image_bytes),
-                return_exceptions=True
-            )
+            # Always run weapon detection, conditionally run face detection
+            if detect_faces:
+                # Run both models concurrently
+                weapon_results, face_results = await asyncio.gather(
+                    self.weapon_model.predict(image_bytes),
+                    self.face_model.predict(image_bytes),
+                    return_exceptions=True
+                )
+            else:
+                # Only run weapon detection
+                weapon_results = await self.weapon_model.predict(image_bytes)
+                face_results = {"detections": []}
             
             # Handle weapon detection results
             weapon_detections = []

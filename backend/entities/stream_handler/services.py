@@ -26,8 +26,9 @@ class StreamHandler:
         
         # Frame skipping and timing control with adaptive frame rate
         frame_count = 0
-        detection_frame_interval = 5  # Process YOLO every 5th frame
-        display_frame_interval = 2    # Send to frontend (starts at ~15 FPS from 30 FPS source)
+        detection_frame_interval = 10  # Process detection every 10th frame (was 5) - OPTIMIZED
+        face_detection_interval = 30   # Process face detection every 30th frame (slower than weapons)
+        display_frame_interval = 2     # Send to frontend (starts at ~15 FPS from 30 FPS source)
         last_detections = []  # Cache last detection results
         
         # Adaptive frame rate parameters
@@ -63,6 +64,7 @@ class StreamHandler:
                 frame_count += 1
                 
                 # Process frame with combined model only every Nth frame
+                # Face detection runs less frequently than weapon detection for better performance
                 if frame_count % detection_frame_interval == 0:
                     try:
                         is_success, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -70,12 +72,24 @@ class StreamHandler:
                             continue
                             
                         image_bytes = buffer.tobytes()
-                        results = await self.model.predict(image_bytes)
+                        
+                        # Decide whether to run face detection on this frame
+                        # Face detection is expensive, so run it less often
+                        detect_faces = (frame_count % face_detection_interval == 0)
+                        results = await self.model.predict(image_bytes, detect_faces=detect_faces)
                         
                         # Update cached detections - combine weapons and faces
-                        last_detections = []
+                        # Only update weapon detections, keep previous face detections if not detecting faces
                         current_time = time.time()
                         should_print_alert = (current_time - self.last_alert_time) >= self.alert_cooldown
+                        
+                        # Keep previous face detections if we're not detecting faces this frame
+                        if not detect_faces:
+                            previous_face_detections = [d for d in last_detections if d.get("type") == "face"]
+                        else:
+                            previous_face_detections = []
+                        
+                        last_detections = []
                         
                         # Process weapon detections
                         weapon_detections = results.get("weapon_detections", [])
@@ -97,30 +111,34 @@ class StreamHandler:
                                     "timestamp": timestamp
                                 })
                         
-                        # Process face detections with emotions
-                        face_detections = results.get("face_detections", [])
-                        for face in face_detections:
-                            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                            emotion = face.get("dominant_emotion", "unknown")
-                            
-                            # Only print alert if cooldown period has passed
-                            if should_print_alert:
-                                emotion_scores = face.get("emotion_scores", {})
-                                emotion_conf = emotion_scores.get(emotion, 0) if emotion_scores else 0
-                                print(f"FACE DETECTED [{self.stream_id} @ {timestamp}]: "
-                                      f"Emotion: {emotion} ({emotion_conf:.0f}%)")
-                            
-                            last_detections.append({
-                                "type": "face",
-                                "emotion": emotion,
-                                "emotion_scores": face.get("emotion_scores", {}),
-                                "confidence": float(face.get("confidence", 0.0)),
-                                "bbox": face.get("bbox", []),
-                                "timestamp": timestamp
-                            })
+                        # Process face detections with emotions (only if we ran face detection)
+                        if detect_faces:
+                            face_detections = results.get("face_detections", [])
+                            for face in face_detections:
+                                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                                emotion = face.get("dominant_emotion", "unknown")
+                                
+                                # Only print alert if cooldown period has passed
+                                if should_print_alert:
+                                    emotion_scores = face.get("emotion_scores", {})
+                                    emotion_conf = emotion_scores.get(emotion, 0) if emotion_scores else 0
+                                    print(f"👤 FACE DETECTED [{self.stream_id} @ {timestamp}]: "
+                                          f"Emotion: {emotion} ({emotion_conf:.0f}%)")
+                                
+                                last_detections.append({
+                                    "type": "face",
+                                    "emotion": emotion,
+                                    "emotion_scores": face.get("emotion_scores", {}),
+                                    "confidence": float(face.get("confidence", 0.0)),
+                                    "bbox": face.get("bbox", []),
+                                    "timestamp": timestamp
+                                })
+                        else:
+                            # Reuse previous face detections
+                            last_detections.extend(previous_face_detections)
                         
                         # Update last alert time if we printed anything
-                        if should_print_alert and (weapon_detections or face_detections):
+                        if should_print_alert and (weapon_detections or (detect_faces and results.get("face_detections"))):
                             self.last_alert_time = current_time
                     
                     except Exception as e:
