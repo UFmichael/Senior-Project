@@ -5,10 +5,52 @@ import asyncio
 from .combined_model import CombinedDetectionModel
 import numpy as np
 from .websocket_manager import manager
-from .utils import *
-from typing import Dict, Any, List, Tuple
+from typing import List, Dict, Any, Tuple
+from entities.person.services import Person 
+
+# --- IMPORT THE THREAT SERVICE CLASS ---
+try:
+    from entities.threat.services import ThreatService
+except ImportError:
+    print("Warning: could not import ThreatService. Disabling database logging.")
+    # Create a dummy class that mimics the real one
+    class ThreatService:
+        def __init__(self):
+            print("Running with dummy ThreatService (DB logging disabled).")
+        async def log_new_threat(self, person_data: Dict[str, Any], stream_id: str):
+            print(f"[SKIPPED DB LOG] Person: {person_data.get('id')} is a threat.")
+            await asyncio.sleep(0) # Non-blocking
+
+# (Helper functions calculate_iou, _is_point_in_box, _get_keypoint... no changes)
+def calculate_iou(boxA: List[float], boxB: List[float]) -> float:
+    try:
+        xA = max(boxA[0], boxB[0])
+        yA = max(boxA[1], boxB[1])
+        xB = min(boxA[2], boxB[2])
+        yB = min(boxA[3], boxB[3])
+        interArea = max(0, xB - xA) * max(0, yB - yA)
+        boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+        boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
+        unionArea = boxAArea + boxBArea - interArea
+        iou = interArea / float(unionArea + 1e-6)
+        return iou
+    except Exception as e:
+        print(f"Error calculating IoU: {e}")
+        return 0.0
+
+def _is_point_in_box(px: float, py: float, box: List[float]) -> bool:
+    x1, y1, x2, y2 = box
+    return x1 <= px <= x2 and y1 <= py <= y2
+
+def _get_keypoint(person_keypoints: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    for kp in person_keypoints:
+        if kp.get("point_name") == name:
+            return kp
+    return {}
+
 
 class StreamHandler:
+    
     SKELETON_EDGES = [
         ('nose', 'left_eye'), ('nose', 'right_eye'), ('left_eye', 'left_ear'), ('right_eye', 'right_ear'),
         ('left_shoulder', 'right_shoulder'), ('left_shoulder', 'left_hip'), ('right_shoulder', 'right_hip'), ('left_hip', 'right_hip'),
@@ -17,149 +59,193 @@ class StreamHandler:
         ('left_hip', 'left_knee'), ('left_knee', 'left_ankle'),
         ('right_hip', 'right_knee'), ('right_knee', 'right_ankle')
     ]
-
+    
     def __init__(self, stream_url: str, stream_id: str):
-        # Stores the RTMP stream URL that this handler will connect to
         self.stream_url = stream_url
         self.stream_id = stream_id
         self._thread = None
-        # A threading.Event object that acts as a safe flag to signal the thread when to stop
         self._stop_event = threading.Event()
         self.model = CombinedDetectionModel()
         
-        # Alert throttling - prevent spamming console with alerts
         self.last_alert_time = 0
-        self.alert_cooldown = 3  # seconds between alerts
+        self.alert_cooldown = 3  # seconds
+        
+        # --- Person Tracking State ---
+        self.tracked_people: Dict[str, Person] = {}
+        self.next_person_id: int = 0
+        self.max_unseen_frames: int = 45 
+        self.min_iou_threshold: float = 0.3 
+        
+        # --- Database Threat Logging State ---
+        self.logged_threat_ids = set()
+        
+        # --- Instantiate the ThreatService ---
+        self.threat_service = ThreatService()
 
-    
-    def _correlate_detections(self, results: Dict[str, Any]) -> Tuple[List[Dict], List[Dict], List[Dict]]:
+    def _update_person_tracker(self, 
+                             results: Dict[str, Any], 
+                             frame_count: int) -> List[Dict[str, Any]]:
         """
-        Correlates poses, faces, and weapons into "person" objects.
+        Manages the lifecycle of Person objects (tracking, updating, creating, deleting).
         
         Returns:
-            (correlated_people, unassigned_weapons, unassigned_faces)
+            A list of dictionaries for all current detections (people + unassigned)
+            to be sent to the websocket.
         """
         pose_detections = results.get("pose_detections", [])
         face_detections = results.get("face_detections", [])
         weapon_detections = results.get("weapon_detections", [])
 
-        correlated_people = []
-        used_face_indices = set()
-        used_weapon_indices = set()
+        # --- 1. Match existing people to new pose detections ---
+        
+        matched_pose_indices = set()
+        people_to_update = [] # (person_id, pose_index, iou)
 
-        # --- 1. Create base "person" objects from pose detections ---
+        for person_id, person in self.tracked_people.items():
+            best_match_iou = 0.0
+            best_match_idx = -1
+            
+            for i, pose in enumerate(pose_detections):
+                if i in matched_pose_indices:
+                    continue # This pose is already matched
+                
+                iou = calculate_iou(person.pose_bbox, pose["bbox"])
+                
+                if iou > self.min_iou_threshold and iou > best_match_iou:
+                    best_match_iou = iou
+                    best_match_idx = i
+            
+            if best_match_idx != -1:
+                people_to_update.append((person_id, best_match_idx))
+                matched_pose_indices.add(best_match_idx)
+        
+        # Update matched people
+        for person_id, pose_idx in people_to_update:
+            self.tracked_people[person_id].update_pose(pose_detections[pose_idx], frame_count)
+
+        # --- 2. Add new people for unmatched poses ---
         for i, pose in enumerate(pose_detections):
-            correlated_people.append({
-                "type": "person",
-                "id": f"person_{i}",
-                "pose_bbox": pose["bbox"],
-                "pose_confidence": pose["confidence"],
-                "keypoints": pose["keypoints"],
-                "face": None,
-                "weapons": []
-            })
+            if i not in matched_pose_indices:
+                new_id = f"person_{self.next_person_id}"
+                self.next_person_id += 1
+                new_person = Person(new_id, pose, frame_count)
+                self.tracked_people[new_id] = new_person
 
-        # --- 2. Correlate Faces to People ---
-        for j, face in enumerate(face_detections):
-            best_match_iou = 0.3  # Min IoU to be considered a match
-            best_match_person = None
+        # --- 3. Correlate Faces and Weapons to all tracked people ---
+        
+        available_face_indices = set(range(len(face_detections)))
+        available_weapon_indices = set(range(len(weapon_detections)))
+
+        for person_id, person in self.tracked_people.items():
+            # We only correlate for people seen this frame
+            if person.last_seen_frame != frame_count:
+                continue
+
+            # a. Correlate best face
+            best_face_match = None
+            best_face_idx = -1
+            best_face_iou = 0.3 # Min IoU for face-to-person
             
-            for person in correlated_people:
-                iou = calculate_iou(person["pose_bbox"], face["bbox"])
-                
-                # Check if this face is a better match for this person
-                if iou > best_match_iou:
-                    # And check if this person doesn't already have a better-matched face
-                    if not person["face"] or iou > person["face"]["_iou"]:
-                        best_match_iou = iou
-                        best_match_person = person
+            for i in available_face_indices:
+                face = face_detections[i]
+                iou = calculate_iou(person.pose_bbox, face["bbox"])
+                if iou > best_face_iou:
+                    best_face_iou = iou
+                    best_face_match = face
+                    best_face_idx = i
             
-            if best_match_person:
-                # If this person already had a face, that face is now unassigned
-                # (This is rare but handles overlapping poses)
-                
-                # Assign this face to the best matching person
-                face["_iou"] = best_match_iou # Store IoU for potential replacement
-                best_match_person["face"] = face
-                used_face_indices.add(j)
+            if best_face_idx != -1:
+                available_face_indices.discard(best_face_idx)
 
-        # --- 3. Correlate Weapons to People ---
-        for k, weapon in enumerate(weapon_detections):
-            weapon_box = weapon["bbox"]
-            best_match_person = None
-            is_held = False
-
-            for person in correlated_people:
-                person_box = person["pose_bbox"]
+            # b. Correlate all matching weapons
+            matched_weapons = []
+            weapons_to_remove = set()
+            for i in available_weapon_indices:
+                weapon = weapon_detections[i]
+                weapon_box = weapon["bbox"]
                 
-                # Check for "held" (wrist in weapon box)
-                # This is a very strong correlation
-                left_wrist = get_keypoint(person, "left_wrist")
-                right_wrist = get_keypoint(person, "right_wrist")
+                # Check for "held"
+                left_wrist = _get_keypoint(person.keypoints, "left_wrist")
+                right_wrist = _get_keypoint(person.keypoints, "right_wrist")
                 
+                is_held = False
                 if (left_wrist and left_wrist.get("conf", 0) > 0.3 and 
-                    is_point_in_box(left_wrist["x"], left_wrist["y"], weapon_box)):
+                    _is_point_in_box(left_wrist["x"], left_wrist["y"], weapon_box)):
                     is_held = True
                 
                 if (not is_held and right_wrist and right_wrist.get("conf", 0) > 0.3 and 
-                    is_point_in_box(right_wrist["x"], right_wrist["y"], weapon_box)):
+                    _is_point_in_box(right_wrist["x"], right_wrist["y"], weapon_box)):
                     is_held = True
-
-                if is_held:
-                    best_match_person = person
-                    break # Stop checking other people if it's held
                 
-                # Check for "near" (simple overlap)
-                iou = calculate_iou(person_box, weapon_box)
-                if iou > 0.05: # Even a small overlap is a good indicator
-                    best_match_person = person
-                    # Don't break, keep checking if another person is "holding" it
+                # Check for "near" (overlap)
+                is_near = calculate_iou(person.pose_bbox, weapon_box) > 0.05
+                
+                if is_held or is_near:
+                    weapon["is_held"] = is_held
+                    matched_weapons.append(weapon)
+                    weapons_to_remove.add(i)
 
-            if best_match_person:
-                weapon["is_held"] = is_held
-                best_match_person["weapons"].append(weapon)
-                used_weapon_indices.add(k)
+            available_weapon_indices -= weapons_to_remove
+            
+            # c. Update the person object
+            person.update_correlations(best_face_match, matched_weapons)
 
-        # --- 4. Collect Unassigned Detections ---
-        unassigned_weapons = [w for i, w in enumerate(weapon_detections) if i not in used_weapon_indices]
-        for w in unassigned_weapons: w["type"] = "weapon" # Add type for drawing
+        # --- 4. Run logic, prune old people, and prepare WS data ---
         
-        unassigned_faces = [f for i, f in enumerate(face_detections) if i not in used_face_indices]
-        for f in unassigned_faces: f["type"] = "face" # Add type for drawing
+        websocket_data = []
+        people_to_remove = []
 
-        # Clean up temporary _iou key from faces
-        for person in correlated_people:
-            if person["face"] and "_iou" in person["face"]:
-                del person["face"]["_iou"]
+        for person_id, person in self.tracked_people.items():
+            if (frame_count - person.last_seen_frame) > self.max_unseen_frames:
+                people_to_remove.append(person_id)
+            else:
+                # This is where the person's internal logic runs
+                person.update_threat_status()
+                # Add their current state to the websocket message
+                websocket_data.append(person.to_dict())
+
+        # Prune dead tracks
+        for person_id in people_to_remove:
+            print(f"[{self.stream_id}] Removing unseen {person_id}")
+            del self.tracked_people[person_id]
+            # Clean up logged threat set
+            self.logged_threat_ids.discard(person_id) 
         
-        return correlated_people, unassigned_weapons, unassigned_faces
+        # Add unassigned items to websocket data
+        for i in available_face_indices:
+            face = face_detections[i]
+            face["type"] = "face" # Add type for drawing
+            websocket_data.append(face)
+        
+        for i in available_weapon_indices:
+            weapon = weapon_detections[i]
+            weapon["type"] = "weapon" # Add type for drawing
+            websocket_data.append(weapon)
+            
+        return websocket_data
+
 
     # This is the main function that runs continuously in the background thread
     async def _process_stream(self):
         print(f"Handler for '{self.stream_id}' starting: trying to connect to {self.stream_url}")
         
-        # Frame skipping and timing control with adaptive frame rate
         frame_count = 0
-        detection_frame_interval = 15  # Process weapon detection every 15th frame - MORE OPTIMIZED
-        face_detection_interval = 60   # Process face detection every 60th frame (once per 2 seconds)
-        display_frame_interval = 2     # Send to frontend (starts at ~15 FPS from 30 FPS source)
-        last_detections = []  # Cache last detection results
+        detection_frame_interval = 15
+        face_detection_interval = 60
+        display_frame_interval = 2
+        last_tracked_data = [] # Cache last tracked data
         
-        # Adaptive frame rate parameters - LESS AGGRESSIVE
-        min_display_interval = 2  # Start higher (max 15 FPS instead of 30)
-        max_display_interval = 4  # Lower max (min 7.5 FPS instead of 5)
+        min_display_interval = 2
+        max_display_interval = 4
         last_adaptation_time = time.time()
-        adaptation_interval = 5  # Adjust every 5 seconds (was 3) - less frequent changes
+        adaptation_interval = 5
         
-        # This is the outer reconnection loop, keeps running as long as the stop event isn't set
         while not self._stop_event.is_set():
             capture = cv2.VideoCapture(self.stream_url)
             
-            # Optimize video capture settings
-            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
+            capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             capture.set(cv2.CAP_PROP_FPS, 30)
 
-            # If the connection fails, wait 5 seconds to try reconnecting
             if not capture.isOpened():
                 print(f"[{self.stream_id}] Error: Stream not available. Retrying in 5 seconds...")
                 time.sleep(5)
@@ -170,15 +256,13 @@ class StreamHandler:
             while not self._stop_event.is_set():
                 was_successful, frame = capture.read()
                 
-                # Runs if the stream has been lost or has ended.
                 if not was_successful:
                     print(f"[{self.stream_id}] Stream lost. Attempting to reconnect...")
                     break
                 
                 frame_count += 1
                 
-                # Process frame with combined model only every Nth frame
-                # Face detection runs less frequently than weapon detection for better performance
+                # --- START: DETECTION & TRACKING LOGIC ---
                 if frame_count % detection_frame_interval == 0:
                     try:
                         is_success, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -187,97 +271,108 @@ class StreamHandler:
                             
                         image_bytes = buffer.tobytes()
                         
-                        # Decide whether to run face detection on this frame
                         detect_faces = (frame_count % face_detection_interval == 0)
                         
-                        # Always detect weapons and poses (poses are our "person" anchor)
                         results = await self.model.predict(
                             image_bytes, 
                             detect_faces=detect_faces,
-                            detect_poses=True
+                            detect_poses=True # Poses are our anchor, always detect
                         )
                         
-                        # --- NEW CORRELATION STEP ---
-                        # If we didn't detect faces, reuse old face data for correlation
+                        # --- RE-INJECT OLD FACES IF NOT DETECTING ---
+                        # This keeps faces "stuck" to people when not re-scanning
                         if not detect_faces:
-                            previous_face_detections = [d for d in last_detections if d.get("type") == "face"]
-                            results["face_detections"] = previous_face_detections
+                            results["face_detections"] = [
+                                p.face for p in self.tracked_people.values() 
+                                if p.face is not None
+                            ]
                         
-                        (correlated_people, 
-                         unassigned_weapons, 
-                         unassigned_faces) = self._correlate_detections(results)
+                        # --- NEW TRACKING STEP ---
+                        last_tracked_data = self._update_person_tracker(results, frame_count)
                         
-                        # Store all correlated/unassigned items for drawing
-                        last_detections = correlated_people + unassigned_weapons + unassigned_faces
-                        
-                        # NEW ALERTING LOGIC 
+                        # --- ALERTING & DB LOGGING LOGIC ---
                         current_time = time.time()
-                        should_print_alert = (current_time - self.last_alert_time) >= self.alert_cooldown
+                        should_print_console_alert = (current_time - self.last_alert_time) >= self.alert_cooldown
                         
-                        if should_print_alert:
-                            has_alert = False
-                            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                        has_console_alert = False
+                        
+                        # We create a list of tasks to run concurrently (e.g., logging to DB)
+                        db_logging_tasks = []
 
-                            # 1. Check for correlated threats (Person + Weapon)
-                            for person in correlated_people:
-                                if person["weapons"]:
-                                    has_alert = True
-                                    weapon_names = ', '.join([w.get('original_class', 'weapon') for w in person["weapons"]])
-                                    emotion = "unknown"
-                                    if person["face"]:
-                                        emotion = person["face"].get('dominant_emotion', 'unknown')
+                        # 1. Check for Person Threats
+                        for item in last_tracked_data:
+                            if item.get("type") == "person":
+                                person_id = item.get("id")
+                                is_threat = item.get("is_threat", False)
+                                
+                                if is_threat:
+                                    # Console Alert (throttled)
+                                    if should_print_console_alert:
+                                        print(f"🔴 PERSON THREAT [{self.stream_id}]: "
+                                              f"{person_id} is a threat. Reason: {item['threat_reason']}")
+                                        has_console_alert = True
                                     
-                                    print(f"🔴 PERSON THREAT [{self.stream_id} @ {timestamp}]: "
-                                          f"Person detected with {weapon_names}. "
-                                          f"Emotion: {emotion}.")
-                            
-                            # 2. Check for unassigned weapons
-                            if not has_alert and unassigned_weapons:
-                                has_alert = True
-                                print(f"🟡 UNASSIGNED WEAPON [{self.stream_id} @ {timestamp}]: "
-                                      f"{len(unassigned_weapons)} weapon(s) detected without a person.")
-                            
-                            if has_alert:
-                                self.last_alert_time = current_time
+                                    # Database Log (state-based)
+                                    if person_id not in self.logged_threat_ids:
+                                        print(f"⚡️ NEW THREAT DETECTED: {person_id}. Logging to database...")
+                                        self.logged_threat_ids.add(person_id)
+                                        # Schedule the DB call to run, but don't block
+                                        db_logging_tasks.append(
+                                            self.threat_service.log_new_threat(item, self.stream_id)
+                                        )
+                                
+                                elif not is_threat and person_id in self.logged_threat_ids:
+                                    # Person is no longer a threat, clear them
+                                    print(f"✅ Threat cleared for {person_id}.")
+                                    self.logged_threat_ids.remove(person_id)
+                                    # TODO: You could add another service call here
+                                    # to update the threat status to "CLEARED" in the DB
+                        
+                        # 2. Check for unassigned weapons (Console only)
+                        if should_print_console_alert and not has_console_alert:
+                            unassigned_weapons = [item for item in last_tracked_data if item.get("type") == "weapon"]
+                            if unassigned_weapons:
+                                print(f"🟡 UNASSIGNED WEAPON [{self.stream_id}]: "
+                                      f"{len(unassigned_weapons)} weapon(s) detected.")
+                                has_console_alert = True
+                        
+                        if has_console_alert:
+                            self.last_alert_time = current_time
+                        
+                        # Run any scheduled DB tasks concurrently
+                        if db_logging_tasks:
+                            await asyncio.gather(*db_logging_tasks)
 
                     except Exception as e:
                         print(f"[{self.stream_id}] Error processing frame: {e}")
                         import traceback
                         traceback.print_exc()
+                # --- END: DETECTION & TRACKING LOGIC ---
                 
-                # Adaptive frame rate adjustment based on client performance
+                
+                # --- Adaptive frame rate (no change) ---
                 current_time = time.time()
                 if current_time - last_adaptation_time >= adaptation_interval:
                     slow_ratio = manager.get_slow_client_ratio(self.stream_id)
-                    
-                    # More conservative thresholds to prevent frame rate oscillation
-                    if slow_ratio > 0.7:  # More than 70% of clients are slow (was 50%)
-                        # Decrease frame rate (increase interval)
+                    if slow_ratio > 0.7:
                         display_frame_interval = min(display_frame_interval + 1, max_display_interval)
-                        print(f"[{self.stream_id}] Decreased frame rate due to slow clients ({slow_ratio:.1%}). New interval: {display_frame_interval}")
                     elif slow_ratio < 0.1 and display_frame_interval > min_display_interval:
-                        # Increase frame rate (decrease interval) only if clients are very fast (was 20%)
                         display_frame_interval = max(display_frame_interval - 1, min_display_interval)
-                        print(f"[{self.stream_id}] Increased frame rate. New interval: {display_frame_interval}")
-                    
                     last_adaptation_time = current_time
                 
-                # Send frame to WebSocket clients only every display_frame_interval frames
-                # and only if there are active connections
-                # --- START: MODIFIED DRAWING LOGIC ---
+                
+                # --- Drawing Logic (no change) ---
                 if frame_count % display_frame_interval == 0 and manager.has_connections(self.stream_id):
                     try:
                         annotated_frame = frame.copy()
                         
-                        for detection in last_detections:
+                        # This logic works perfectly with our new person.to_dict()
+                        for detection in last_tracked_data:
                             det_type = detection.get("type", "unknown")
 
                             # --- Draw Correlated Person ---
                             if det_type == "person":
-                                
-                                # --- START: NEW POSE DRAWING ---
                                 keypoints = detection.get("keypoints", [])
-                                # Create a quick lookup dictionary for keypoints
                                 keypoints_dict = {kp["point_name"]: kp for kp in keypoints}
 
                                 # 1. Draw Skeleton Lines
@@ -285,8 +380,6 @@ class StreamHandler:
                                 for p1_name, p2_name in self.SKELETON_EDGES:
                                     kp1 = keypoints_dict.get(p1_name)
                                     kp2 = keypoints_dict.get(p2_name)
-                                    
-                                    # Check if both keypoints exist and are confident
                                     if kp1 and kp2 and kp1.get("conf", 0) > 0.3 and kp2.get("conf", 0) > 0.3:
                                         pt1 = (int(kp1["x"]), int(kp1["y"]))
                                         pt2 = (int(kp2["x"]), int(kp2["y"]))
@@ -295,24 +388,21 @@ class StreamHandler:
                                 # 2. Draw Keypoint Circles
                                 pose_point_color = (0, 255, 255) # Yellow
                                 for kp in keypoints:
-                                    if kp.get("conf", 0) > 0.3: # Draw only confident keypoints
+                                    if kp.get("conf", 0) > 0.3:
                                         x, y = int(kp["x"]), int(kp["y"])
-                                        cv2.circle(annotated_frame, (x, y), 4, pose_point_color, -1) # -1 thickness = filled
-                                # --- END: NEW POSE DRAWING ---
+                                        cv2.circle(annotated_frame, (x, y), 4, pose_point_color, -1)
 
                                 # Draw Person Pose Box
                                 pose_box = detection.get("pose_bbox", [])
                                 if pose_box:
                                     x1, y1, x2, y2 = map(int, pose_box)
-                                    color = (0, 255, 0) # GREEN for person
-                                    label = "Person"
+                                    # --- Color box based on threat level ---
+                                    color = (0, 0, 255) if detection.get("is_threat") else (0, 255, 0) # RED if threat, else GREEN
                                     
-                                    # Add emotion to label if face exists
-                                    if detection["face"]:
-                                        emotion = detection["face"].get("dominant_emotion", "??")
-                                        label = f"Person: {emotion}"
+                                    label = f"{detection['id']}: {detection['stable_emotion']}"
+                                    if detection.get("is_threat"):
+                                        label = f"{detection['id']} (THREAT!)"
                                     
-                                    # Draw box and label
                                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                                     cv2.putText(annotated_frame, label, (x1, y1 - 10),
                                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
@@ -322,15 +412,15 @@ class StreamHandler:
                                     face_box = detection["face"].get("bbox", [])
                                     if face_box:
                                         fx1, fy1, fx2, fy2 = map(int, face_box)
-                                        cv2.rectangle(annotated_frame, (fx1, fy1), (fx2, fy2), (255, 0, 0), 2) # BLUE for face
+                                        cv2.rectangle(annotated_frame, (fx1, fy1), (fx2, fy2), (255, 0, 0), 2)
                                 
                                 # Draw Weapon Boxes (if they exist)
                                 for weapon in detection.get("weapons", []):
                                     weapon_box = weapon.get("bbox", [])
                                     if weapon_box:
                                         wx1, wy1, wx2, wy2 = map(int, weapon_box)
-                                        w_label = f"{weapon.get('original_class', 'weapon')}: {weapon['confidence']:.2f}"
-                                        cv2.rectangle(annotated_frame, (wx1, wy1), (wx2, wy2), (0, 0, 255), 2) # RED for weapon
+                                        w_label = f"{weapon.get('original_class', 'weapon')}"
+                                        cv2.rectangle(annotated_frame, (wx1, wy1), (wx2, wy2), (0, 0, 255), 2)
                                         cv2.putText(annotated_frame, w_label, (wx1, wy1 - 10),
                                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                             
@@ -339,7 +429,7 @@ class StreamHandler:
                                 bbox = detection.get("bbox", [])
                                 if bbox:
                                     x1, y1, x2, y2 = map(int, bbox)
-                                    color = (0, 165, 255) # ORANGE for unassigned weapon
+                                    color = (0, 165, 255) # ORANGE
                                     label = f"UNASSIGNED {detection.get('original_class', 'weapon')}"
                                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                                     cv2.putText(annotated_frame, label, (x1, y1 - 10),
@@ -350,7 +440,7 @@ class StreamHandler:
                                 bbox = detection.get("bbox", [])
                                 if bbox:
                                     x1, y1, x2, y2 = map(int, bbox)
-                                    color = (255, 255, 0) # CYAN for unassigned face
+                                    color = (255, 255, 0) # CYAN
                                     label = f"UNASSIGNED {detection.get('dominant_emotion', 'Face')}"
                                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                                     cv2.putText(annotated_frame, label, (x1, y1 - 10),
@@ -364,27 +454,25 @@ class StreamHandler:
                             await manager.send_frame(
                                 stream_id=self.stream_id,
                                 frame_data=frame_bytes,
-                                detections=last_detections # Send the new correlated data
+                                detections=last_tracked_data # Send the new tracked data
                             )
                     except Exception as e:
                         print(f"[{self.stream_id}] Error sending frame to WebSocket (non-critical): {e}")
-                # --- END: MODIFIED DRAWING LOGIC ---
+                # --- END: DRAWING LOGIC ---
                 
-                # Periodically send pings to keep connections alive
-                if frame_count % 300 == 0:  # Every ~10 seconds at 30 FPS
+                # Periodically send pings
+                if frame_count % 300 == 0:
                     await manager.send_ping(self.stream_id)
             
             capture.release()
             
         print(f"Handler for '{self.stream_id}' has been stopped.")
 
+    # --- start, stop, is_running methods (Unchanged) ---
     def start(self) -> bool:
-        # Check if the handler is already running to prevent starting multiple threads
         if self.is_running():
             print("Handler is already running.")
             return False
-
-        # Resets the stop flag to "False", allowing the while loops in "_process_stream" to run
         self._stop_event.clear()
         
         async def run_async():
@@ -403,27 +491,26 @@ class StreamHandler:
         return True
 
     def stop(self) -> bool:
-        # Check if the handler is actually running before trying to stop it
         if not self.is_running():
             print("Handler is not running.")
             return False
-
-        # Sets the internal flag to True, telling the while loops in "_process_stream" to terminate
         self._stop_event.set()
-        self._thread.join(timeout=5)
         
-        # Double checks to see if the thread is alive. If alive, its stuck
-        if self._thread.is_alive():
+        # Check if thread exists before joining
+        if self._thread:
+            self._thread.join(timeout=5)
+        
+        if self._thread and self._thread.is_alive():
             print("Error: Handler thread did not stop in time.")
             return False
         
         print(f"Stream handler for '{self.stream_id}' stopped successfully.")
         return True
 
-    # A helper method to check if the thread is active
     def is_running(self) -> bool:
         return self._thread and self._thread.is_alive()
 
+# --- Global handler management (unchanged) ---
 stream_handlers = {}
 _lock = threading.Lock()
 
