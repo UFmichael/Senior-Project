@@ -5,8 +5,19 @@ import asyncio
 from .combined_model import CombinedDetectionModel
 import numpy as np
 from .websocket_manager import manager
+from .utils import *
+from typing import Dict, Any, List, Tuple
 
 class StreamHandler:
+    SKELETON_EDGES = [
+        ('nose', 'left_eye'), ('nose', 'right_eye'), ('left_eye', 'left_ear'), ('right_eye', 'right_ear'),
+        ('left_shoulder', 'right_shoulder'), ('left_shoulder', 'left_hip'), ('right_shoulder', 'right_hip'), ('left_hip', 'right_hip'),
+        ('left_shoulder', 'left_elbow'), ('left_elbow', 'left_wrist'),
+        ('right_shoulder', 'right_elbow'), ('right_elbow', 'right_wrist'),
+        ('left_hip', 'left_knee'), ('left_knee', 'left_ankle'),
+        ('right_hip', 'right_knee'), ('right_knee', 'right_ankle')
+    ]
+
     def __init__(self, stream_url: str, stream_id: str):
         # Stores the RTMP stream URL that this handler will connect to
         self.stream_url = stream_url
@@ -19,6 +30,109 @@ class StreamHandler:
         # Alert throttling - prevent spamming console with alerts
         self.last_alert_time = 0
         self.alert_cooldown = 3  # seconds between alerts
+
+    
+    def _correlate_detections(self, results: Dict[str, Any]) -> Tuple[List[Dict], List[Dict], List[Dict]]:
+        """
+        Correlates poses, faces, and weapons into "person" objects.
+        
+        Returns:
+            (correlated_people, unassigned_weapons, unassigned_faces)
+        """
+        pose_detections = results.get("pose_detections", [])
+        face_detections = results.get("face_detections", [])
+        weapon_detections = results.get("weapon_detections", [])
+
+        correlated_people = []
+        used_face_indices = set()
+        used_weapon_indices = set()
+
+        # --- 1. Create base "person" objects from pose detections ---
+        for i, pose in enumerate(pose_detections):
+            correlated_people.append({
+                "type": "person",
+                "id": f"person_{i}",
+                "pose_bbox": pose["bbox"],
+                "pose_confidence": pose["confidence"],
+                "keypoints": pose["keypoints"],
+                "face": None,
+                "weapons": []
+            })
+
+        # --- 2. Correlate Faces to People ---
+        for j, face in enumerate(face_detections):
+            best_match_iou = 0.3  # Min IoU to be considered a match
+            best_match_person = None
+            
+            for person in correlated_people:
+                iou = calculate_iou(person["pose_bbox"], face["bbox"])
+                
+                # Check if this face is a better match for this person
+                if iou > best_match_iou:
+                    # And check if this person doesn't already have a better-matched face
+                    if not person["face"] or iou > person["face"]["_iou"]:
+                        best_match_iou = iou
+                        best_match_person = person
+            
+            if best_match_person:
+                # If this person already had a face, that face is now unassigned
+                # (This is rare but handles overlapping poses)
+                
+                # Assign this face to the best matching person
+                face["_iou"] = best_match_iou # Store IoU for potential replacement
+                best_match_person["face"] = face
+                used_face_indices.add(j)
+
+        # --- 3. Correlate Weapons to People ---
+        for k, weapon in enumerate(weapon_detections):
+            weapon_box = weapon["bbox"]
+            best_match_person = None
+            is_held = False
+
+            for person in correlated_people:
+                person_box = person["pose_bbox"]
+                
+                # Check for "held" (wrist in weapon box)
+                # This is a very strong correlation
+                left_wrist = get_keypoint(person, "left_wrist")
+                right_wrist = get_keypoint(person, "right_wrist")
+                
+                if (left_wrist and left_wrist.get("conf", 0) > 0.3 and 
+                    is_point_in_box(left_wrist["x"], left_wrist["y"], weapon_box)):
+                    is_held = True
+                
+                if (not is_held and right_wrist and right_wrist.get("conf", 0) > 0.3 and 
+                    is_point_in_box(right_wrist["x"], right_wrist["y"], weapon_box)):
+                    is_held = True
+
+                if is_held:
+                    best_match_person = person
+                    break # Stop checking other people if it's held
+                
+                # Check for "near" (simple overlap)
+                iou = calculate_iou(person_box, weapon_box)
+                if iou > 0.05: # Even a small overlap is a good indicator
+                    best_match_person = person
+                    # Don't break, keep checking if another person is "holding" it
+
+            if best_match_person:
+                weapon["is_held"] = is_held
+                best_match_person["weapons"].append(weapon)
+                used_weapon_indices.add(k)
+
+        # --- 4. Collect Unassigned Detections ---
+        unassigned_weapons = [w for i, w in enumerate(weapon_detections) if i not in used_weapon_indices]
+        for w in unassigned_weapons: w["type"] = "weapon" # Add type for drawing
+        
+        unassigned_faces = [f for i, f in enumerate(face_detections) if i not in used_face_indices]
+        for f in unassigned_faces: f["type"] = "face" # Add type for drawing
+
+        # Clean up temporary _iou key from faces
+        for person in correlated_people:
+            if person["face"] and "_iou" in person["face"]:
+                del person["face"]["_iou"]
+        
+        return correlated_people, unassigned_weapons, unassigned_faces
 
     # This is the main function that runs continuously in the background thread
     async def _process_stream(self):
@@ -74,73 +188,58 @@ class StreamHandler:
                         image_bytes = buffer.tobytes()
                         
                         # Decide whether to run face detection on this frame
-                        # Face detection is expensive, so run it less often
                         detect_faces = (frame_count % face_detection_interval == 0)
-                        results = await self.model.predict(image_bytes, detect_faces=detect_faces)
                         
-                        # Update cached detections - combine weapons and faces
-                        # Only update weapon detections, keep previous face detections if not detecting faces
+                        # Always detect weapons and poses (poses are our "person" anchor)
+                        results = await self.model.predict(
+                            image_bytes, 
+                            detect_faces=detect_faces,
+                            detect_poses=True
+                        )
+                        
+                        # --- NEW CORRELATION STEP ---
+                        # If we didn't detect faces, reuse old face data for correlation
+                        if not detect_faces:
+                            previous_face_detections = [d for d in last_detections if d.get("type") == "face"]
+                            results["face_detections"] = previous_face_detections
+                        
+                        (correlated_people, 
+                         unassigned_weapons, 
+                         unassigned_faces) = self._correlate_detections(results)
+                        
+                        # Store all correlated/unassigned items for drawing
+                        last_detections = correlated_people + unassigned_weapons + unassigned_faces
+                        
+                        # NEW ALERTING LOGIC 
                         current_time = time.time()
                         should_print_alert = (current_time - self.last_alert_time) >= self.alert_cooldown
                         
-                        # Keep previous face detections if we're not detecting faces this frame
-                        if not detect_faces:
-                            previous_face_detections = [d for d in last_detections if d.get("type") == "face"]
-                        else:
-                            previous_face_detections = []
-                        
-                        last_detections = []
-                        
-                        # Process weapon detections
-                        weapon_detections = results.get("weapon_detections", [])
-                        for detection in weapon_detections:
-                            if detection["confidence"] > 0.65:
-                                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                                
-                                # Only print alert if cooldown period has passed
-                                if should_print_alert:
-                                    print(f"🔴 WEAPON ALERT [{self.stream_id} @ {timestamp}]: "
-                                          f"Detected {detection.get('original_class', 'weapon')} "
-                                          f"with confidence {detection['confidence']:.2f}")
-                                
-                                last_detections.append({
-                                    "type": "weapon",
-                                    "class": detection.get("original_class", "weapon"),
-                                    "confidence": float(detection["confidence"]),
-                                    "bbox": detection.get("bbox", []),
-                                    "timestamp": timestamp
-                                })
-                        
-                        # Process face detections with emotions (only if we ran face detection)
-                        if detect_faces:
-                            face_detections = results.get("face_detections", [])
-                            for face in face_detections:
-                                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                                emotion = face.get("dominant_emotion", "unknown")
-                                
-                                # Only print alert if cooldown period has passed
-                                if should_print_alert:
-                                    emotion_scores = face.get("emotion_scores", {})
-                                    emotion_conf = emotion_scores.get(emotion, 0) if emotion_scores else 0
-                                    print(f"👤 FACE DETECTED [{self.stream_id} @ {timestamp}]: "
-                                          f"Emotion: {emotion} ({emotion_conf:.0f}%)")
-                                
-                                last_detections.append({
-                                    "type": "face",
-                                    "emotion": emotion,
-                                    "emotion_scores": face.get("emotion_scores", {}),
-                                    "confidence": float(face.get("confidence", 0.0)),
-                                    "bbox": face.get("bbox", []),
-                                    "timestamp": timestamp
-                                })
-                        else:
-                            # Reuse previous face detections
-                            last_detections.extend(previous_face_detections)
-                        
-                        # Update last alert time if we printed anything
-                        if should_print_alert and (weapon_detections or (detect_faces and results.get("face_detections"))):
-                            self.last_alert_time = current_time
-                    
+                        if should_print_alert:
+                            has_alert = False
+                            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+                            # 1. Check for correlated threats (Person + Weapon)
+                            for person in correlated_people:
+                                if person["weapons"]:
+                                    has_alert = True
+                                    weapon_names = ', '.join([w.get('original_class', 'weapon') for w in person["weapons"]])
+                                    emotion = "unknown"
+                                    if person["face"]:
+                                        emotion = person["face"].get('dominant_emotion', 'unknown')
+                                    
+                                    print(f"🔴 PERSON THREAT [{self.stream_id} @ {timestamp}]: "
+                                          f"Person detected with {weapon_names}. "
+                                          f"Emotion: {emotion}.")
+                            
+                            # 2. Check for unassigned weapons
+                            if not has_alert and unassigned_weapons:
+                                has_alert = True
+                                print(f"🟡 UNASSIGNED WEAPON [{self.stream_id} @ {timestamp}]: "
+                                      f"{len(unassigned_weapons)} weapon(s) detected without a person.")
+                            
+                            if has_alert:
+                                self.last_alert_time = current_time
+
                     except Exception as e:
                         print(f"[{self.stream_id}] Error processing frame: {e}")
                         import traceback
@@ -165,47 +264,99 @@ class StreamHandler:
                 
                 # Send frame to WebSocket clients only every display_frame_interval frames
                 # and only if there are active connections
+                # --- START: MODIFIED DRAWING LOGIC ---
                 if frame_count % display_frame_interval == 0 and manager.has_connections(self.stream_id):
                     try:
-                        # Create annotated frame with bounding boxes
                         annotated_frame = frame.copy()
                         
                         for detection in last_detections:
-                            if "bbox" in detection and detection["bbox"]:
-                                bbox = detection["bbox"]
-                                x1, y1, x2, y2 = map(int, bbox)
+                            det_type = detection.get("type", "unknown")
+
+                            # --- Draw Correlated Person ---
+                            if det_type == "person":
                                 
-                                detection_type = detection.get("type", "unknown")
+                                # --- START: NEW POSE DRAWING ---
+                                keypoints = detection.get("keypoints", [])
+                                # Create a quick lookup dictionary for keypoints
+                                keypoints_dict = {kp["point_name"]: kp for kp in keypoints}
+
+                                # 1. Draw Skeleton Lines
+                                pose_line_color = (255, 255, 0) # Cyan
+                                for p1_name, p2_name in self.SKELETON_EDGES:
+                                    kp1 = keypoints_dict.get(p1_name)
+                                    kp2 = keypoints_dict.get(p2_name)
+                                    
+                                    # Check if both keypoints exist and are confident
+                                    if kp1 and kp2 and kp1.get("conf", 0) > 0.3 and kp2.get("conf", 0) > 0.3:
+                                        pt1 = (int(kp1["x"]), int(kp1["y"]))
+                                        pt2 = (int(kp2["x"]), int(kp2["y"]))
+                                        cv2.line(annotated_frame, pt1, pt2, pose_line_color, 2)
                                 
-                                if detection_type == "weapon":
-                                    # RED for weapons
-                                    color = (0, 0, 255)
-                                    label = f"{detection.get('class', 'weapon')}: {detection['confidence']:.2f}"
-                                elif detection_type == "face":
-                                    # BLUE for faces with emotion
-                                    color = (255, 0, 0)
-                                    emotion = detection.get('emotion', 'unknown')
-                                    label = f"{emotion}"
-                                else:
-                                    # GREEN for other detections
-                                    color = (0, 255, 0)
-                                    label = f"{detection.get('class', 'unknown')}: {detection['confidence']:.2f}"
+                                # 2. Draw Keypoint Circles
+                                pose_point_color = (0, 255, 255) # Yellow
+                                for kp in keypoints:
+                                    if kp.get("conf", 0) > 0.3: # Draw only confident keypoints
+                                        x, y = int(kp["x"]), int(kp["y"])
+                                        cv2.circle(annotated_frame, (x, y), 4, pose_point_color, -1) # -1 thickness = filled
+                                # --- END: NEW POSE DRAWING ---
+
+                                # Draw Person Pose Box
+                                pose_box = detection.get("pose_bbox", [])
+                                if pose_box:
+                                    x1, y1, x2, y2 = map(int, pose_box)
+                                    color = (0, 255, 0) # GREEN for person
+                                    label = "Person"
+                                    
+                                    # Add emotion to label if face exists
+                                    if detection["face"]:
+                                        emotion = detection["face"].get("dominant_emotion", "??")
+                                        label = f"Person: {emotion}"
+                                    
+                                    # Draw box and label
+                                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                                    cv2.putText(annotated_frame, label, (x1, y1 - 10),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                                 
-                                # Draw rectangle
-                                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                                # Draw Face Box (if it exists)
+                                if detection["face"]:
+                                    face_box = detection["face"].get("bbox", [])
+                                    if face_box:
+                                        fx1, fy1, fx2, fy2 = map(int, face_box)
+                                        cv2.rectangle(annotated_frame, (fx1, fy1), (fx2, fy2), (255, 0, 0), 2) # BLUE for face
                                 
-                                # Add label background for better visibility
-                                label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-                                cv2.rectangle(annotated_frame, 
-                                            (x1, y1 - label_size[1] - 10), 
-                                            (x1 + label_size[0], y1), 
-                                            color, -1)
-                                
-                                # Add label text
-                                cv2.putText(annotated_frame, label, (x1, y1 - 5),
-                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                        
-                        # Encode with lower quality for faster transmission
+                                # Draw Weapon Boxes (if they exist)
+                                for weapon in detection.get("weapons", []):
+                                    weapon_box = weapon.get("bbox", [])
+                                    if weapon_box:
+                                        wx1, wy1, wx2, wy2 = map(int, weapon_box)
+                                        w_label = f"{weapon.get('original_class', 'weapon')}: {weapon['confidence']:.2f}"
+                                        cv2.rectangle(annotated_frame, (wx1, wy1), (wx2, wy2), (0, 0, 255), 2) # RED for weapon
+                                        cv2.putText(annotated_frame, w_label, (wx1, wy1 - 10),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                            
+                            # --- Draw Unassigned Weapon ---
+                            elif det_type == "weapon":
+                                bbox = detection.get("bbox", [])
+                                if bbox:
+                                    x1, y1, x2, y2 = map(int, bbox)
+                                    color = (0, 165, 255) # ORANGE for unassigned weapon
+                                    label = f"UNASSIGNED {detection.get('original_class', 'weapon')}"
+                                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                                    cv2.putText(annotated_frame, label, (x1, y1 - 10),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+                            # --- Draw Unassigned Face ---
+                            elif det_type == "face":
+                                bbox = detection.get("bbox", [])
+                                if bbox:
+                                    x1, y1, x2, y2 = map(int, bbox)
+                                    color = (255, 255, 0) # CYAN for unassigned face
+                                    label = f"UNASSIGNED {detection.get('dominant_emotion', 'Face')}"
+                                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                                    cv2.putText(annotated_frame, label, (x1, y1 - 10),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+                        # Encode and send frame
                         is_success, encoded_frame = cv2.imencode(".jpg", annotated_frame, 
                                                                  [cv2.IMWRITE_JPEG_QUALITY, 60])
                         if is_success:
@@ -213,11 +364,11 @@ class StreamHandler:
                             await manager.send_frame(
                                 stream_id=self.stream_id,
                                 frame_data=frame_bytes,
-                                detections=last_detections
+                                detections=last_detections # Send the new correlated data
                             )
                     except Exception as e:
-                        # Don't let WebSocket errors break the main processing loop
                         print(f"[{self.stream_id}] Error sending frame to WebSocket (non-critical): {e}")
+                # --- END: MODIFIED DRAWING LOGIC ---
                 
                 # Periodically send pings to keep connections alive
                 if frame_count % 300 == 0:  # Every ~10 seconds at 30 FPS

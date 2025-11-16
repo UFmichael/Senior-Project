@@ -57,3 +57,6 @@ openapi.json
 
 # Cache 
 __pycache__/
+
+# model 
+*.pt
