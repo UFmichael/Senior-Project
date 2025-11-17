@@ -43,10 +43,10 @@
                 <div class="stream-controls">
                     <button class="control-btn" (click)="startStreaming()" [disabled]="isStreamActive || !selectedCamera">▶ Start Stream</button>
                     <button class="control-btn" (click)="stopStreaming()" [disabled]="!isStreamActive || !selectedCamera">⏹ Stop Stream</button>
-                    <button class="control-btn">Fullscreen</button>
+                    <button class="control-btn" (click)="toggleFullscreen()">Fullscreen</button>
                 </div>
             </div>
-            <div class="video-placeholder">
+            <div class="video-placeholder" #videoPlaceholder>
                 <img *ngIf="hasFrame" [src]="currentFrame" alt="Live Feed" style="width: 100%; height: 100%; object-fit: cover;" />
                 <div *ngIf="!hasFrame" style="display: flex; align-items: center; justify-content: center; height: 100%; color: #888;">
                     <span>{{ selectedCamera?.status === 'active' ? 'Connecting to stream...' : 'No video feed available' }}</span>
@@ -58,6 +58,9 @@
                     🎯 {{ detectionCount }} Detection(s)
                 </div>
                 <span class="timestamp">{{ currentTime | date:'HH:mm:ss' }}</span>
+                <button class="exit-fullscreen-btn" (click)="toggleFullscreen()" title="Exit Fullscreen">
+                    &times;
+                </button>
             </div>
             <div class="bottom-metrics-bar">
                 <div class="metric-card">

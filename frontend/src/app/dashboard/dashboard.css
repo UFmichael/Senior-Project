@@ -296,3 +296,32 @@
   flex-direction: column;
   justify-content: space-between;
 }
+
+.exit-fullscreen-btn {
+  display: none; 
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  border: 2px solid white;
+  border-radius: 50%;
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 40px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 99999;
+  transition: background-color 0.2s;
+}
+
+.exit-fullscreen-btn:hover {
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+.video-placeholder:is(:fullscreen, :-webkit-full-screen, :-moz-full-screen, :-ms-fullscreen) .exit-fullscreen-btn {
+  display: block;
+}

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { StreamService } from '../services/stream.service';
@@ -35,6 +35,8 @@ interface Detection {
 })
 
 export class Dashboard implements OnInit, OnDestroy {
+  @ViewChild('videoPlaceholder') videoPlaceholder!: ElementRef;
+
   //dummy data...
   cameras: Camera[] = [
     { name: 'Main Entrance', location: 'Building A', id: 1, status: 'active' },
@@ -216,6 +218,43 @@ export class Dashboard implements OnInit, OnDestroy {
 
   goToAnalytics(): void {
     this.router.navigate(['/analytic'])
+  }
+
+  toggleFullscreen() {
+    if (!this.videoPlaceholder) {
+      console.error('Video placeholder element not found.');
+      return;
+    }
+
+    const elem = this.videoPlaceholder.nativeElement as any;
+    const doc = document as any;
+
+    if (
+      !doc.fullscreenElement &&
+      !doc.webkitFullscreenElement &&
+      !doc.mozFullScreenElement &&
+      !doc.msFullscreenElement
+    ) {
+      if (elem.requestFullscreen) {
+        elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        elem.webkitRequestFullscreen();
+      } else if (elem.mozRequestFullScreen) {
+        elem.mozRequestFullScreen();
+      } else if (elem.msRequestFullscreen) {
+        elem.msRequestFullscreen();
+      }
+    } else {
+      if (doc.exitFullscreen) {
+        doc.exitFullscreen();
+      } else if (doc.webkitExitFullscreen) {
+        doc.webkitExitFullscreen();
+      } else if (doc.mozCancelFullScreen) {
+        doc.mozCancelFullScreen();
+      } else if (doc.msExitFullscreen) {
+        doc.msExitFullscreen();
+      }
+    }
   }
 
   getCameraStatusClass(status: string): string {
