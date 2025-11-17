@@ -2,6 +2,7 @@ import asyncio
 from typing import Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import sessionmaker
+from uuid import UUID
 
 # --- 1. Import your settings ---
 from core.config import get_settings
@@ -58,7 +59,7 @@ class ThreatService:
         # No self.session or self.engine needed here,
         # we will get sessions from the factory.
 
-    async def log_new_threat(self, person_data: Dict[str, Any], stream_id: str):
+    async def log_new_threat(self, person_data: Dict[str, Any], admin_id: UUID, stream_id: str):
         """
         Logs a new threat event to the database based on a Person object's data.
         """
@@ -72,13 +73,15 @@ class ThreatService:
             primary_weapon = max(person_data["weapons"], key=lambda w: w.get("confidence", 0))
         face_data = person_data.get("face")
         
+    
         # --- 2. Create the Threat database object ---
         new_threat = Threat(
             # TODO: Replace '1' with a real admin/user ID from your context
-            admin=1, 
+            admin=admin_id, 
             
             threat_level=ThreatLevels.HIGH if primary_weapon else ThreatLevels.LOW,
             threat_status=ThreatStatus.MONITORING,
+
             
             predicted_emotion=face_data.get("dominant_emotion") if face_data else None,
             face_confidence=int(face_data.get("confidence", 0) * 100) if face_data else None,

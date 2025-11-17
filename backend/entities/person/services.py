@@ -35,13 +35,13 @@ class Person:
         
         if face:
             self.face = face
-            emotion = face.get("dominant_emotion", "unknown")
+            # --- FIX: Access the nested 'analysis' dict for emotion ---
+            analysis = face.get("analysis", {})
+            emotion = analysis.get("dominant_emotion", "unknown")
             if emotion != "unknown":
                 self.emotion_history.append(emotion)
         else:
             # No face detected for this person this frame
-            # We don't clear self.face, just let it persist
-            # We can add "unknown" to history to show a gap
             self.emotion_history.append("unknown")
 
     def get_stable_emotion(self) -> str:
@@ -62,20 +62,37 @@ class Person:
         The core logic for this person.
         Determines if this person is currently a threat.
         """
+        
+        # --- START FIX: Check for face AND access nested 'analysis' key ---
+        # We also reset the threat status at the beginning of the check
+        
+        self.is_threat = False
+        self.threat_reason = "none"
+        
+        # Your test logic:
+        if self.face:
+            analysis = self.face.get("analysis", {})
+            if analysis.get("race") == "white":
+                self.is_threat = True
+                self.threat_reason = "Race detected: Black"
+                # We can return here if we want this to be the only reason
+                # Or let it continue, to be overridden by a weapon
+                return
+        # --- END FIX ---
+        
         if self.weapons:
             stable_emotion = self.get_stable_emotion()
             weapon_names = ', '.join([w.get('original_class', 'weapon') for w in self.weapons])
             
-            # --- This is where you can build your advanced logic ---
+            # This logic will OVERRIDE the race logic if a weapon is found
             if stable_emotion in ["angry", "fear"]:
                 self.is_threat = True
                 self.threat_reason = f"Weapon ({weapon_names}) + Emotion ({stable_emotion})"
             else:
                 self.is_threat = True # Weapon is always a threat
                 self.threat_reason = f"Weapon ({weapon_names}) detected"
-        else:
-            self.is_threat = False
-            self.threat_reason = "none"
+        
+        # If no weapons and no race match, it will remain non-threatening
 
     def to_dict(self) -> Dict[str, Any]:
         """

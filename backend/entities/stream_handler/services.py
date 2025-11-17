@@ -2,11 +2,13 @@ import cv2
 import threading
 import time
 import asyncio
+import uuid
 from .combined_model import CombinedDetectionModel
 import numpy as np
 from .websocket_manager import manager
 from typing import List, Dict, Any, Tuple
 from entities.person.services import Person 
+from .utils import *
 
 # --- IMPORT THE THREAT SERVICE CLASS ---
 try:
@@ -17,36 +19,11 @@ except ImportError:
     class ThreatService:
         def __init__(self):
             print("Running with dummy ThreatService (DB logging disabled).")
-        async def log_new_threat(self, person_data: Dict[str, Any], stream_id: str):
+        async def log_new_threat(self, person_data: Dict[str, Any], admin_id: uuid.UUID):
             print(f"[SKIPPED DB LOG] Person: {person_data.get('id')} is a threat.")
             await asyncio.sleep(0) # Non-blocking
 
-# (Helper functions calculate_iou, _is_point_in_box, _get_keypoint... no changes)
-def calculate_iou(boxA: List[float], boxB: List[float]) -> float:
-    try:
-        xA = max(boxA[0], boxB[0])
-        yA = max(boxA[1], boxB[1])
-        xB = min(boxA[2], boxB[2])
-        yB = min(boxA[3], boxB[3])
-        interArea = max(0, xB - xA) * max(0, yB - yA)
-        boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
-        boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
-        unionArea = boxAArea + boxBArea - interArea
-        iou = interArea / float(unionArea + 1e-6)
-        return iou
-    except Exception as e:
-        print(f"Error calculating IoU: {e}")
-        return 0.0
 
-def _is_point_in_box(px: float, py: float, box: List[float]) -> bool:
-    x1, y1, x2, y2 = box
-    return x1 <= px <= x2 and y1 <= py <= y2
-
-def _get_keypoint(person_keypoints: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
-    for kp in person_keypoints:
-        if kp.get("point_name") == name:
-            return kp
-    return {}
 
 
 class StreamHandler:
@@ -60,12 +37,13 @@ class StreamHandler:
         ('right_hip', 'right_knee'), ('right_knee', 'right_ankle')
     ]
     
-    def __init__(self, stream_url: str, stream_id: str):
+    def __init__(self, stream_url: str, stream_id: str, admin_id: uuid.UUID):
         self.stream_url = stream_url
         self.stream_id = stream_id
         self._thread = None
         self._stop_event = threading.Event()
         self.model = CombinedDetectionModel()
+        self.admin_id = admin_id
         
         self.last_alert_time = 0
         self.alert_cooldown = 3  # seconds
@@ -165,16 +143,16 @@ class StreamHandler:
                 weapon_box = weapon["bbox"]
                 
                 # Check for "held"
-                left_wrist = _get_keypoint(person.keypoints, "left_wrist")
-                right_wrist = _get_keypoint(person.keypoints, "right_wrist")
+                left_wrist = get_keypoint(person.keypoints, "left_wrist")
+                right_wrist = get_keypoint(person.keypoints, "right_wrist")
                 
                 is_held = False
                 if (left_wrist and left_wrist.get("conf", 0) > 0.3 and 
-                    _is_point_in_box(left_wrist["x"], left_wrist["y"], weapon_box)):
+                    is_point_in_box(left_wrist["x"], left_wrist["y"], weapon_box)):
                     is_held = True
                 
                 if (not is_held and right_wrist and right_wrist.get("conf", 0) > 0.3 and 
-                    _is_point_in_box(right_wrist["x"], right_wrist["y"], weapon_box)):
+                    is_point_in_box(right_wrist["x"], right_wrist["y"], weapon_box)):
                     is_held = True
                 
                 # Check for "near" (overlap)
@@ -318,7 +296,7 @@ class StreamHandler:
                                         self.logged_threat_ids.add(person_id)
                                         # Schedule the DB call to run, but don't block
                                         db_logging_tasks.append(
-                                            self.threat_service.log_new_threat(item, self.stream_id)
+                                            self.threat_service.log_new_threat(item, self.stream_id, self.admin_id)
                                         )
                                 
                                 elif not is_threat and person_id in self.logged_threat_ids:
@@ -514,13 +492,13 @@ class StreamHandler:
 stream_handlers = {}
 _lock = threading.Lock()
 
-def start_stream_processing(stream_id: str):
+def start_stream_processing(stream_id: str, admin_id: uuid.UUID):
     with _lock:
         if stream_id in stream_handlers and stream_handlers[stream_id].is_running():
             return False
 
         stream_url = f"rtmp://127.0.0.1:1935/live/{stream_id}"
-        handler = StreamHandler(stream_url=stream_url, stream_id=stream_id)
+        handler = StreamHandler(stream_url=stream_url, stream_id=stream_id, admin_id=admin_id)
         stream_handlers[stream_id] = handler
         
         return handler.start()
