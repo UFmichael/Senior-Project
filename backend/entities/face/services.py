@@ -16,8 +16,7 @@ class FaceModel:
 
         try:
             print("Loading DeepFace models...")
-            for action in self.actions:
-                DeepFace.build_model(action, model_name=model_type)
+            DeepFace.build_model(model_name=model_type)
             print("DeepFace model loaded successfully.")
         except Exception as e:
             print(f"Warning: Could not pre-load DeepFace models. They will be loaded on first predict(). Error: {e}")
@@ -65,6 +64,7 @@ class FaceModel:
             
             analysis_data = {
                 "dominant_emotion": face_data.get("dominant_emotion"),
+                "race": face_data.get("race"),
                 "emotion_scores": face_data.get("emotion"),
                 "age": face_data.get("age"),
                 "dominant_gender": face_data.get("dominant_gender"),

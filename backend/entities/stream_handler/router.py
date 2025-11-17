@@ -9,7 +9,7 @@ router = APIRouter(prefix="/stream", tags=["Stream"])
 # API endpoint to start the video stream handler.
 @router.post("/{stream_id}/start", status_code=200)
 async def start_handler(stream_id: str, user: User = Depends(get_current_user)):
-    success = services.start_stream_processing(stream_id=stream_id) 
+    success = services.start_stream_processing(stream_id=stream_id, admin_id=user.id) 
     if not success:
         raise HTTPException(status_code=400, detail=f"Handler for stream '{stream_id}' is already running.")
     return {"status": "success", "message": f"Stream handler for '{stream_id}' started."}
