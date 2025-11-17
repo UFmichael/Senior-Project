@@ -8,12 +8,11 @@
 
 .page-header {
     background-color: var(--carddisplay);
-    padding: 40px;
+    padding: 20px;
     font-size: 2.4em;
     font-weight: bold;
     color: var(--text-color);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    height: 0.7em; 
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); 
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -179,7 +178,8 @@
   padding: 20px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .video-feed-header {
@@ -228,11 +228,9 @@
   background-color: #414040;
   border-radius: 6px;
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  padding: 10px;
   margin-bottom: 20px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .live-indicator {
