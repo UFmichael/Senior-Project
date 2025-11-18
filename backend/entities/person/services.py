@@ -69,18 +69,6 @@ class Person:
         self.is_threat = False
         self.threat_reason = "none"
         
-        # Your test logic:
-        # I AM ONLY DOING THIS TO TEST THAT I AM ABLE TO STORE THREAT IN DB I AM WHITE
-        if self.face:
-            analysis = self.face.get("analysis", {})
-            if analysis.get("race") == "white":
-                self.is_threat = True
-                self.threat_reason = "Race detected: White"
-                # We can return here if we want this to be the only reason
-                # Or let it continue, to be overridden by a weapon
-                return
-        # --- END FIX ---
-        
         if self.weapons:
             stable_emotion = self.get_stable_emotion()
             weapon_names = ', '.join([w.get('original_class', 'weapon') for w in self.weapons])
