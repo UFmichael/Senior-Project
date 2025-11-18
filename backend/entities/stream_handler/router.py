@@ -3,13 +3,16 @@ from . import services
 from entities.common.models.model_user import User
 from core.dependencies import get_current_user
 from .websocket_manager import manager
+import uuid
 
 router = APIRouter(prefix="/stream", tags=["Stream"])
 
 # API endpoint to start the video stream handler.
 @router.post("/{stream_id}/start", status_code=200)
 async def start_handler(stream_id: str, user: User = Depends(get_current_user)):
-    success = services.start_stream_processing(stream_id=stream_id, admin_id=user.id) 
+    # Ensure admin_id is a proper UUID (handle both UUID objects and string representations)
+    admin_id = user.id if isinstance(user.id, uuid.UUID) else uuid.UUID(str(user.id))
+    success = services.start_stream_processing(stream_id=stream_id, admin_id=admin_id) 
     if not success:
         raise HTTPException(status_code=400, detail=f"Handler for stream '{stream_id}' is already running.")
     return {"status": "success", "message": f"Stream handler for '{stream_id}' started."}

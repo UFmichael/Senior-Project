@@ -296,7 +296,7 @@ class StreamHandler:
                                         self.logged_threat_ids.add(person_id)
                                         # Schedule the DB call to run, but don't block
                                         db_logging_tasks.append(
-                                            self.threat_service.log_new_threat(item, self.stream_id, self.admin_id)
+                                            self.threat_service.log_new_threat(item, self.admin_id, self.stream_id)
                                         )
                                 
                                 elif not is_threat and person_id in self.logged_threat_ids:
