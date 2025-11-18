@@ -34,9 +34,11 @@ def is_point_in_box(px: float, py: float, box: List[float]) -> bool:
     x1, y1, x2, y2 = box
     return x1 <= px <= x2 and y1 <= py <= y2
 
-def get_keypoint(person: Dict[str, Any], name: str) -> Dict[str, Any]:
-    """Get a specific keypoint by name from a person's keypoints list."""
-    for kp in person.get("keypoints", []):
+def get_keypoint(keypoints: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    """Get a specific keypoint by name from a keypoints list."""
+    if not keypoints:
+        return {}
+    for kp in keypoints:
         if kp.get("point_name") == name:
             return kp
     return {}
