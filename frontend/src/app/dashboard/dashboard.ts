@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/co
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { StreamService } from '../services/stream.service';
+import { AuthService } from '../services/auth.service';
 import { Colorpicker } from '../colorpicker/colorpicker';
 import { Subscription } from 'rxjs';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
@@ -63,6 +64,7 @@ export class Dashboard implements OnInit, OnDestroy {
   constructor(
     private router: Router,
     private streamService: StreamService,
+    private authService: AuthService,
     private sanitizer: DomSanitizer
   ) 
   {
@@ -218,6 +220,14 @@ export class Dashboard implements OnInit, OnDestroy {
 
   goToAnalytics(): void {
     this.router.navigate(['/analytic'])
+  }
+
+  logout(): void {
+    if (this.isStreamActive) {
+      this.stopStreaming();
+    }
+    this.authService.logout();
+    this.router.navigate(['/login']);
   }
 
   toggleFullscreen() {
