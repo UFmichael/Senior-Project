@@ -1,23 +1,24 @@
-import { NgModule } from '@angular/core';
-import { Routes, RouterModule } from '@angular/router';
-import { Login } from './login/login'
-import { Signup } from './signup/signup'
-import { Dashboard } from './dashboard/dashboard';
-import { Alertlog } from './alertlog/alertlog'
-import { Analytic } from './analytic/analytic'
+import { Routes } from '@angular/router';
+import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
-    {path: '', redirectTo: '/login', pathMatch: 'full'},
-    {path: 'login', component: Login},
-    {path: 'signup', component: Signup},
-    {path: 'dashboard', component: Dashboard},
-    {path: 'alertlog', component: Alertlog},
-    {path: 'analytic', component: Analytic}
+  { path: 'login', loadComponent: () => import('./login/login').then(m => m.Login) },
+  { path: 'signup', loadComponent: () => import('./signup/signup').then(m => m.Signup) },
+  { 
+    path: 'dashboard', 
+    loadComponent: () => import('./dashboard/dashboard').then(m => m.Dashboard),
+    canActivate: [authGuard]
+  },
+  { 
+    path: 'analytic', 
+    loadComponent: () => import('./analytic/analytic').then(m => m.Analytic),
+    canActivate: [authGuard]
+  },
+  { 
+    path: 'alertlog', 
+    loadComponent: () => import('./alertlog/alertlog').then(m => m.Alertlog),
+    canActivate: [authGuard]
+  },
+  { path: '', redirectTo: '/login', pathMatch: 'full' },
+  { path: '**', redirectTo: '/login' }
 ];
-
-@NgModule({
-    imports: [RouterModule.forRoot(routes)],
-    exports: [RouterModule]
-})
-
-export class AppRoutingModule {}
