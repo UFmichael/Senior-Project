@@ -94,17 +94,19 @@ export class AuthService {
    * Load current user info
    */
   loadCurrentUser(): void {
-    if (!this.isBrowser) return;
+  if (!this.isBrowser) return;
 
-    this.http.get<UserResponse>(`${this.apiUrl}/users/me`)
-      .subscribe({
-        next: (user) => this.currentUserSubject.next(user),
-        error: (error) => {
-          console.error('Failed to load user:', error);
+  this.http.get<UserResponse>(`${this.apiUrl}/users/me`)
+    .subscribe({
+      next: (user) => this.currentUserSubject.next(user),
+      error: (error) => {
+        console.error('Failed to load user:', error);
+        if (error.status === 401) {
           this.logout();
         }
-      });
-  }
+      }
+    });
+}
 
   /**
    * Logout user
