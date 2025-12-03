@@ -101,7 +101,9 @@ export class AuthService {
         next: (user) => this.currentUserSubject.next(user),
         error: (error) => {
           console.error('Failed to load user:', error);
-          this.logout();
+          if (error.status === 401) {
+            this.logout();
+          }
         }
       });
   }
@@ -113,6 +115,7 @@ export class AuthService {
     if (this.isBrowser) {
       localStorage.removeItem(this.tokenKey);
       localStorage.removeItem(this.refreshTokenKey);
+      localStorage.removeItem('token');
     }
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
